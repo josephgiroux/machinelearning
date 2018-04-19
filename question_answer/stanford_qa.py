@@ -6,9 +6,10 @@ import json
 import string
 from util.text_util import get_word2vec_model
 from keras.models import Model, Input
-from keras.layers import Conv1D, Dense, MaxPooling1D, GlobalAveragePooling1D
+from keras.layers import Conv1D, Dense, MaxPooling1D, GlobalAveragePooling1D, Lambda
 from keras.optimizers import Adam
 from keras.layers import LeakyReLU
+from keras import backend as K
 import tensorflow as tf
 from warnings import warn
 
@@ -159,15 +160,26 @@ def conv_test(n_features=300, lr=0.0001):
         kernel_initializer='glorot_normal')(layer)
     # activations = layer
     # layer =
-    layer = LeakyReLU()(layer)
+    # layer = LeakyReLU()(layer)
+    layer = Lambda(
+        lambda x: K.sum(x, axis=0),
+        output_shape=lambda s: (s[1], s[2]))(layer)
     # layer = GlobalAveragePooling1D()(layer)
     # layer = Dense(64, kernel_initializer='truncated_normal', dropout=0.5)(layer)
     # layer = Dense(32, kernel_initializer='truncated_normal', dropout=0.5)(layer)
     # layer = Dense(64, kernel_initializer='truncated_normal', dropout=0.5)(layer)
     #
     # layer = LeakyReLU()(layer)
+
+    def loss_fn(y_true, y_pred, pos_weight=2):
+        return tf.nn.weighted_cross_entropy_with_logits(
+            targets=y_true,
+            logits=y_pred,
+            pos_weight=pos_weight,
+            name=None)
+
     model = Model(inputs=inp, outputs=layer)
-    model.compile(optimizer=Adam(lr=lr), loss='categorical_crossentropy')
+    model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
     model.summary()
     return model
 
@@ -189,8 +201,14 @@ mat, words = text_to_matrix(question, word2vec)
 mat, words, answer = text_to_matrix_with_answer(
     context, answer_text, answer_start, word2vec)
 
-for w, ans in zip(words, answer):
-    print((w, ans))
+x = mat.reshape([1]+list(mat.shape))
+pred = model.predict(x)
+print(pred.shape)
+model.fit(x, answer)
+
+print(pred)
+for n, (w, ans) in enumerate(zip(words, answer)):
+    print((w, ans, pred[0][n].sum()))
 
 example_map_matrix_to_text(mat, words)
 

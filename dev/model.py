@@ -16,7 +16,7 @@ def fake_x_y(n_observations=100, n_inputs=3, n_outputs=2, noise_rate=0.1):
             # get operators to interleave between inputs to yield an output for
             # the nn to search for
             output_transforms[output].append(np.random.choice(possible_operators))
-    x = np.random.normal(size=(n_observations,n_inputs))
+    x = np.random.normal(size=(n_observations, n_inputs))
     output_ys = []
 
     for output in range(n_outputs):
@@ -25,7 +25,7 @@ def fake_x_y(n_observations=100, n_inputs=3, n_outputs=2, noise_rate=0.1):
             output_y = transform(output_y, x[:, idx])
 
         output_y = add_noise(output_y, rate=noise_rate)
-        output_ys.append(output_y.reshape((n_observations,1)))
+        output_ys.append(output_y.reshape((n_observations, 1)))
 
 
     y = np.concatenate(output_ys, axis=1)
@@ -61,23 +61,28 @@ def add_noise(var, rate=0.1):
 
 
 def quick_scatterplot(x, y):
-    df = pd.DataFrame(np.concatenate([x, y], axis=1), columns=['x', 'y'])
-    ax = sns.regplot(x='x', y='y', data=df)
+    print(x.shape)
+    x_cols = ["x{}".format(n) for n in range(x.shape[1])]
+    y_cols = ["y{}".format(n) for n in range(y.shape[1])]
+    df = pd.DataFrame(np.concatenate([x, y], axis=1), columns=x_cols+y_cols)
+    ax = sns.regplot(x='x0', y='y0', data=df)
     plt.show()
 
 
-n_inputs = 1
-n_outputs = 1
+n_inputs = 3
+n_outputs = 2
 x, y = fake_x_y(
     n_observations=500,
     n_inputs=n_inputs,
     n_outputs=n_outputs,
     noise_rate=0.1)
+print(x.shape)
+print(y.shape)
 quick_scatterplot(x, y)
 
 model, _,_ = simple_mlp(n_inputs=n_inputs, n_outputs=n_outputs)
 
-for n in range(10):
+for n in range(5):
     model.fit(x, y, validation_split=0.2)
 
 

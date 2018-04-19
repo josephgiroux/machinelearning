@@ -6,13 +6,19 @@ import json
 import string
 from util.text_util import get_word2vec_model
 from keras.models import Model, Input
-from keras.layers import Conv1D, MaxPooling1D
+from keras.layers import Conv1D, Dense, MaxPooling1D, GlobalAveragePooling1D
 from keras.optimizers import Adam
 from keras.layers import LeakyReLU
 import tensorflow as tf
+from warnings import warn
 
-word2vec = get_word2vec_model()
 
+
+def main():
+    # word2vec = get_word2vec_model()
+
+
+    df = import_stanford_qa_data()
 
 
 def import_stanford_qa_data():
@@ -39,8 +45,6 @@ def import_stanford_qa_data():
     df['c_id'] = df['context'].factorize()[0]
     df.head()
     return df
-
-df = import_stanford_qa_data()
 #
 # one_row = df['id', :]
 #
@@ -68,66 +72,147 @@ def clean_for_w2v(word):
     return rtn
 
 
+
+
+def get_vec(word, model):
+    try:
+        return model.get_vector(word)
+    except KeyError:
+        try:
+            return model.get_vector(word.lower())
+        except KeyError:
+            return None
+
+
 def text_to_matrix(text, model):
-    # first remove punctuation
     words = text.split(' ')
 
-    def get_vec(word):
-        try:
-            return model.get_vector(word)
-        except KeyError:
-            try:
-                return model.get_vector(word.lower())
-            except KeyError:
-                return None
 
     vectors = []
+    remaining_words = []
     for word in words:
-        vec = get_vec(clean_for_w2v(word))
+        vec = get_vec(clean_for_w2v(word), model)
         if vec is None:
             continue
         vectors.append(vec)
+        remaining_words.append(word)
 
     matrix = np.stack(vectors)
-    return matrix
+    return matrix, remaining_words
 
 
 
-def conv_test(n_inputs=300, lr=0.0001):
+def text_to_matrix_with_answer(text, answer, answer_index, model):
+    # first remove punctuation
+    words = text.split(' ')
+    answer_words = answer.split(' ')
+    in_answer = False
+    num_answer_words = len(answer_words)
+    answer_words_found = 0
+    vectors = []
+    answer_flags = []
+    remaining_words = []
+    curr_char_idx = 0
+    for n, word in enumerate(words):
+        if curr_char_idx == answer_index:
+            in_answer = True
+        if in_answer:
+            if not answer_words:
+                in_answer = False
+                if answer_words_found != num_answer_words:
+                    print("Correct answer was not found in string!")
+                    print("Answer: {}".format(answer))
+                    print("Text: {}".format(text))
+                    raise ValueError("Correct answer was not found in string")
+            elif word == answer_words[0]:
+                answer_words_found += 1
+                answer_words = answer_words[1:]
+            else:
+                print("Wrong answer words")
+                print("Answer: {}".format(answer))
+                print("Text: {}".format(text))
+                raise ValueError("Words came out of order.")
+
+
+        curr_char_idx += 1 + len(word)
+        vec = get_vec(clean_for_w2v(word), model)
+        if vec is None:
+            continue
+        vectors.append(vec)
+        remaining_words.append(word)
+        answer_flags.append(int(in_answer))
+
+    assert len(answer_flags) == len(remaining_words)
+    matrix = np.stack(vectors)
+    if np.sum(answer_flags)==0:
+        print("Answer: {}".format(answer))
+        print("Text: {}".format(text))
+        warn("Answer words not found in word2vec!")
+    return matrix, remaining_words, np.array(answer_flags)
+
+def conv_test(n_features=300, lr=0.0001):
     tf.global_variables_initializer()
-    inp = Input((None, n_inputs), dtype='float32')
-    print(inp.shape)
+    inp = Input((None, n_features), dtype='float32')
     layer = inp
     layer = Conv1D(
-        32, kernel_size=(4,), padding='same',
+        32, kernel_size=(6,), padding='same',
         kernel_initializer='glorot_normal')(layer)
-    print(layer.shape)
-    conv = layer
+    # activations = layer
+    # layer =
     layer = LeakyReLU()(layer)
-
-    layer = MaxPooling1D(4)(layer)
-    print(layer.shape)
-    model = Model(inputs=inp, outputs=conv)
+    # layer = GlobalAveragePooling1D()(layer)
+    # layer = Dense(64, kernel_initializer='truncated_normal', dropout=0.5)(layer)
+    # layer = Dense(32, kernel_initializer='truncated_normal', dropout=0.5)(layer)
+    # layer = Dense(64, kernel_initializer='truncated_normal', dropout=0.5)(layer)
+    #
+    # layer = LeakyReLU()(layer)
+    model = Model(inputs=inp, outputs=layer)
     model.compile(optimizer=Adam(lr=lr), loss='categorical_crossentropy')
+    model.summary()
     return model
 
 
 
+def example_map_matrix_to_text(matrix, words):
+    print(len(words))
+    print(matrix.shape)
+    sums = np.sum(matrix, axis=1)
+    for n, word in enumerate(words):
+        print("{}: {}".format(word, sums[n]))
+
 model = conv_test()
+
+question, context, answer_start, answer_text = extract_fields(df, 1)
+
+mat, words = text_to_matrix(question, word2vec)
+
+mat, words, answer = text_to_matrix_with_answer(
+    context, answer_text, answer_start, word2vec)
+
+for w, ans in zip(words, answer):
+    print((w, ans))
+
+example_map_matrix_to_text(mat, words)
+
+
 print(mat.shape)
+
+pred = model.predict(mat.reshape([1]+list(mat.shape)))
+print(pred)
+print(pred.shape)
+
+
 print(mat[:,np.newaxis].shape)
 print(model.predict(mat.reshape([1]+list(mat.shape))))
 out = model.predict(mat.reshape([1]+list(mat.shape)))
 print(out.shape)
 
 
-question, context, answer_start, answer_text = extract_fields(df, 1)
 
 print(question)
 print(answer_text)
 print(context)
 
-mat = text_to_matrix(question, model)
 
 
 

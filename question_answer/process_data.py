@@ -10,27 +10,48 @@ from nltk.corpus import stopwords
 stopwords = stopwords.words('english')
 unknown_vectors = defaultdict(lambda: np.random.normal(size=(300,)))
 import regex as re
+import unidecode
+re.DEFAULT_VERSION = re.VERSION1
+replace_digits_rgx = re.compile("([0-9,]+[0-9]+)")
+splitter_rgx = re.compile("[ .'\"&/\-]")
+
+suffix_replacements = {
+    'ised': 'ized',
+    'sation': 'zation',
+    'ysed': 'yzed',
+    'aton': 'ation',
+    'oured': 'ored',
+    'ourite': 'orite',
+}
 
 def replace_digits(word):
-    replace_digits = re.compile("([0-9]{2,})")
     new_str = str(word)
-    matches = replace_digits.finditer(word)
+    matches = replace_digits_rgx.finditer(word)
     for m in matches:
         new_str = new_str[:m.start(0)] + "#" * len(m[0]) + new_str[m.end(0):]
     return new_str
-"#" * len(m[0])
 
-line = re.sub(
-           r"(?i)^.*interfaceOpDataFile.*$",
-           "interfaceOpDataFile %s" % fileIn,
-           line
-       )
 
 
 def get_word2vec_and_stanford_qa():
     word2vec = get_word2vec_model()
     df = import_stanford_qa_data()
     return word2vec, df
+
+
+def split_with_dollarsign(text):
+    words = splitter_rgx.split(text)
+    rtn = []
+    for word in words:
+        # whole lot hassle to split off dollar sign as its own word
+        if '$' in word:
+            for n, w in enumerate(word.split('$')):
+                if n:
+                    rtn.append('$')
+                rtn.append(w)
+        else:
+            rtn.append(word)
+    return rtn
 
 
 
@@ -72,11 +93,18 @@ def extract_fields(df, idx):
 
 def clean_for_w2v(word):
     rtn = ""
+    word = replace_digits(word)
     for ch in word:
-        if ch in string.ascii_letters:
+        if ch.isalnum():
+            rtn += ch
+        elif ch in '$#':
             rtn += ch
         elif ch in string.punctuation:
-            rtn += '_'
+            # Possibly save/split out meaningful punctuation, like $ --
+            # a little too much trouble now
+            # print(ch)
+            # rtn += '_'
+            pass
 
     return rtn.strip('_')
 
@@ -84,19 +112,31 @@ def clean_for_w2v(word):
 
 
 def get_vec(word, model, possible_next=None):
+    if not word:
+        return None, 1
+    orig = word
     def _get_vec(word):
         try:
             return model.get_vector(word)
         except KeyError:
-            low = word.lower()
+            word = word.lower()
             try:
-                return model.get_vector(low)
+                return model.get_vector(word)
             except KeyError:
-                if low in stopwords:
+                if word in stopwords:
                     return None
                 else:
-                    print(word)
-                    return unknown_vectors[word]
+
+                    for k,v in suffix_replacements.items():
+                        if word.endswith(k):
+                            word = word[:-len(k)] + v
+
+                    word = unidecode.unidecode(word)
+                    try:
+                        return model.get_vector(word)
+                    except KeyError:
+                        print(orig, word)
+                        return unknown_vectors[word]
 
     if False and possible_next:
         # disable this look-ahead for now, a little more complexity than is needed
@@ -104,11 +144,15 @@ def get_vec(word, model, possible_next=None):
         if possible_combined is not None:
             return possible_combined, 2
     else:
-        return _get_vec(word), 1
+        # hack here -- since $ has to be split by
+        # itself, in order to keep the character counter
+        # from advancing an extra character every time a $
+        # is seen, it has to return 0 in that case.
+        return _get_vec(word), word != '$'
 
 
 def text_to_matrix(text, model):
-    words = text.split(' ')
+    words = split_with_dollarsign(text)
 
 
     vectors = []
@@ -136,9 +180,9 @@ def text_to_matrix(text, model):
 
 def text_to_matrix_with_answer(text, answer, answer_idx, model):
     # first remove punctuation
-    words = text.split(' ')
-    # clean_words = map(clean_for_w2v, words)\
-    answer_words = answer.split(' ')
+    words = split_with_dollarsign(text)
+    # clean_words = map(clea_rn_for_w2v, words)\
+    answer_words = split_with_dollarsign(answer)
     # clean_answer_words = map(clean_for_w2v, answer_words)
     in_answer = False
     num_answer_words = len(answer_words)
@@ -149,7 +193,9 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
     curr_char_idx = 0
 
     for n, word in enumerate(words):
-        if curr_char_idx <= answer_idx < curr_char_idx + len(word):
+
+        if curr_char_idx <= answer_idx <= curr_char_idx + len(word):
+            print((word, curr_char_idx, answer_idx))
             if answer_idx != curr_char_idx:
                 print("Watch out, was {} off because of {}".format(
                     np.abs(answer_idx-curr_char_idx), word[:np.abs(answer_idx-curr_char_idx)]))
@@ -171,14 +217,16 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
                 answer_words = answer_words[1:]
             else:
                 print("The word was {} and I was expecting {}".format(word, answer_words[0]))
+                print(words)
+                print(answer_words)
                 print("Wrong answer words")
                 print("Answer: {}".format(answer))
                 print("Text: {}".format(text))
                 raise ValueError("Words came out of order.")
 
 
-        curr_char_idx += 1 + len(word)
-        vec, n = get_vec(clean_for_w2v(word), model)
+        vec, inc = get_vec(clean_for_w2v(word), model)
+        curr_char_idx += inc + len(word)
         if vec is None:
             continue
         vectors.append(vec)
@@ -190,6 +238,8 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
     matrix = np.stack(vectors)
     answer_flags = np.array(answer_flags)
     if np.sum(answer_flags)==0:
+        print(answer_words_found)
+        print(answer_flags)
         print("Answer: {}".format(answer))
         print("Text: {}".format(text))
         print(answer_words)
@@ -220,8 +270,10 @@ def one_question_test(df, word2vec, model):
     text_mat, text_words, answer, num_positive, num_negative = text_to_matrix_with_answer(
         text=context, answer=answer_text,
         answer_idx=answer_start, model=word2vec)
+
     def add_dim(mat):
         return mat.reshape([1]+list(mat.shape))
+
     pred = model.predict(x=[
         add_dim(question_mat), add_dim(text_mat)])
 
@@ -235,3 +287,36 @@ def one_question_test(df, word2vec, model):
     return pred
 
 
+
+def add_vector_information(df, word2vec, n=10):
+    df['text_matrix'] = None
+    df['question_matrix'] = None
+    df['answer_vector'] = None
+    n_rows = df.shape[0]
+    print(df.shape[0])
+    total_pos = 0
+    total_neg = 0
+    # for idx in range(n_rows):
+    #     print(idx)
+    for idx in range(n_rows):
+        print(idx)
+        question, context, answer_start, answer_text = extract_fields(df, idx)
+
+        question_mat, question_words = text_to_matrix(
+            text=question, model=word2vec)
+
+        text_mat, text_words, answer_vec, num_pos, num_neg = text_to_matrix_with_answer(
+            text=context, answer=answer_text,
+            answer_idx=answer_start, model=word2vec)
+
+        df.iloc[idx].at['text_matrix'] = text_mat
+        df.iloc[idx].at['question_matrix'] = question_mat
+        df.iloc[idx].at['answer_vector'] = answer_vec
+        total_pos += num_pos
+        total_neg += num_neg
+
+    print(
+        "On average there were {} answer words and {} other words per row."
+        "\nPositive should be weighted about {}.".format(
+            total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
+    return df

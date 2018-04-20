@@ -5,10 +5,13 @@ import json
 import string
 from util.text_util import get_word2vec_model
 from keras.models import Model, Input
-from keras.layers import Conv1D, Dense, GlobalMaxPooling1D, GlobalAveragePooling1D, Dropout, Lambda, Concatenate
+from keras.layers import Conv1D, Dense, GlobalMaxPooling1D, \
+    GlobalAveragePooling1D, Dropout, Lambda, Concatenate, \
+    TimeDistributed, RepeatVector
 from keras.optimizers import Adam
 from keras.layers import LeakyReLU
 from keras import backend as K
+from keras.engine.topology import Layer
 import tensorflow as tf
 from warnings import warn
 
@@ -19,6 +22,67 @@ def main():
     df = import_stanford_qa_data()
     return word2vec, df
 word2vec, df = main()
+
+
+#
+# import numpy as np
+
+class ContextRepeat(Layer):
+
+    def __init__(self, **kwargs):
+        super(ContextRepeat, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        timed_inputs, fixed_inputs = inputs
+        n_repeats = tf.shape(timed_inputs)[0:1]
+        print("Timed inputs:", timed_inputs.shape)
+        print("Fixed inputs:", fixed_inputs.shape)
+
+        print("Tf timed inputs:", tf.shape(timed_inputs))
+        print("N repeats", n_repeats, n_repeats.shape)
+        n_repeats = tf.convert_to_tensor([1, n_repeats[0]])
+        print("N repeats", n_repeats, n_repeats.shape)
+        n_fixed_features = tf.shape(fixed_inputs)[-1]
+        fixed_inputs = tf.reshape(
+            fixed_inputs, shape=(n_fixed_features,))
+
+
+        n_timesteps = tf.shape(timed_inputs)[-2:-1]
+        tiled = tf.tile(fixed_inputs, n_timesteps)
+        print("TILED shape: ", tf.shape(tiled), tiled.shape)
+
+        reshape = tf.shape(fixed_inputs)
+
+        print("RESHAPE shape", tf.shape(reshape), reshape.shape)
+        print("n_timesteps shape", tf.shape(n_timesteps), n_timesteps.shape)
+
+        print("n_timesteps[0] shape", tf.shape(n_timesteps[0]), n_timesteps[0].shape)
+        new_shape = [1, n_timesteps[0], n_fixed_features]
+
+        print(new_shape)
+        matrix = tf.reshape(tiled, new_shape)
+        combined_matrix = tf.concat((timed_inputs, matrix), axis=-1)
+        print("MATRIX", matrix.shape)
+        # matrix = tf.reshape(tf.tile(
+        #     fixed_inputs, n_repeats
+        #     ), [n_repeats] + list(fixed_inputs.shape))
+        return combined_matrix
+
+
+    def compute_output_shape(self, input_shape):
+
+        timed_shape, fixed_shape = input_shape
+        n_output_features = timed_shape[-1] + fixed_shape[-1]
+        return (
+            timed_shape[0],
+            timed_shape[1],
+            n_output_features)
+
+pred = one_question_test(df, word2vec)
+
+# model = combined_network()
+
+
 
 def import_stanford_qa_data():
     # thanks to Bharath, https://www.kaggle.com/bharathsh/stanford-q-a-json-to-clean-dataframe,
@@ -142,15 +206,17 @@ def text_to_matrix_with_answer(text, answer, answer_index, model):
             continue
         vectors.append(vec)
         remaining_words.append(word)
-        answer_flags.append(int(in_answer))
+        answer_flags.append(np.array(
+            (int(in_answer), int(not in_answer))))
 
     assert len(answer_flags) == len(remaining_words)
     matrix = np.stack(vectors)
+    answer_flags = np.array(answer_flags)
     if np.sum(answer_flags)==0:
         print("Answer: {}".format(answer))
         print("Text: {}".format(text))
         warn("Answer words not found in word2vec!")
-    return matrix, remaining_words, np.array(answer_flags)
+    return matrix, remaining_words, answer_flags
 
 def conv_test(n_features=300, lr=0.0001):
     tf.global_variables_initializer()
@@ -185,6 +251,8 @@ def conv_test(n_features=300, lr=0.0001):
     return model
 
 
+
+
 def conv_reader_network(
         n_features=300,
         lr=0.0001,
@@ -215,7 +283,7 @@ def conv_reader_network(
     model = Model(inputs=inp, outputs=conv)
 
     model.summary()
-    return model
+    return model, inp, conv
 
 
 def dense_interpreter_network(
@@ -241,11 +309,35 @@ def dense_interpreter_network(
             name=None)
 
     model = Model(inputs=inp, outputs=layer)
-    model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
     model.summary()
-    return model
+    return model, inp, layer
 
 
+
+def dense_interpreter_network_connected(
+        question_inputs,
+        text_inputs,
+        n_question_features=64,
+        n_text_features=256,
+        dropout=0.5,
+        lr=0.0001):
+
+    neuron_counts = [1024, 256, 64, 16, 2]
+    layer = ContextRepeat()([text_inputs, question_inputs])
+    layer = TimeDistributed(Dense(neuron_counts[0]))(layer)
+    for num_units in neuron_counts[1:]:
+        layer = Dense(num_units)(layer)
+        layer = Dropout(dropout)(layer)
+
+    def loss_fn(y_true, y_pred, pos_weight=2):
+        return tf.nn.weighted_cross_entropy_with_logits(
+            targets=y_true,
+            logits=y_pred,
+            pos_weight=pos_weight,
+            name=None)
+
+    # model.summary()
+    return layer
 
 interp = dense_interpreter_network()
 
@@ -258,6 +350,39 @@ def example_map_matrix_to_text(matrix, words):
         print("{}: {}".format(word, sums[n]))
 
 
+
+def combined_network(
+        n_word_features=300,
+        text_conv_specifications=None,
+        question_conv_specifications=None,
+        question_pooling=GlobalAveragePooling1D,
+        ):
+
+    text_conv_specifications = text_conv_specifications or [
+        (2, 16),
+        (3, 32),
+        (4, 64),
+        (5, 128),
+        (6, 256), # second pair of last element is number of output features per word
+    ]
+
+    (
+        (question_reader, question_inputs, question_outputs,),
+        (text_reader, text_inputs, text_outputs,)
+    ) = get_readers()
+
+    dense_out = dense_interpreter_network_connected(
+        question_outputs, text_outputs, 300)
+
+    # print(conv.shape)
+    # if pooling is not None:
+    #     conv = pooling()(conv)
+    model = Model(inputs=[question_inputs, text_inputs], outputs=dense_out)
+
+    # model.summary()
+    return model
+
+combined_network()
 
 
 
@@ -276,13 +401,15 @@ def get_readers():
         (5, 128),
         (6, 256), # second pair of last element is number of output features per word
     ]
-    question_reader = conv_reader_network(
+    question_reader, question_inputs, question_outputs = conv_reader_network(
         conv_specifications=question_reader_layers,
         pooling=GlobalAveragePooling1D)
-    text_reader = conv_reader_network(
+    text_reader, text_inputs, text_outputs = conv_reader_network(
         conv_specifications=text_reader_layers)
 
-    return question_reader, text_reader
+    return (
+        (question_reader, question_inputs, question_outputs,),
+        (text_reader, text_inputs, text_outputs,),)
 
 
 
@@ -291,8 +418,9 @@ question_reader, text_reader = get_readers()
 
 
 def one_question_test(df, word2vec):
-
-    question_reader, text_reader = get_readers()
+    question, context, answer_start, answer_text = extract_fields(df, 1)
+    # question_reader, text_reader = get_readers()
+    model = combined_network()
     question_mat, question_words = text_to_matrix(
         question, word2vec)
 
@@ -302,6 +430,10 @@ def one_question_test(df, word2vec):
     def add_dim(mat):
         return mat.reshape([1]+list(mat.shape))
 
+    pred = model.predict(x=[
+        add_dim(question_mat), add_dim(text_mat)])
+    return pred
+    # pred =
     question_pred = question_reader.predict(add_dim(question_mat))
     text_pred = text_reader.predict(add_dim(text_mat))
 
@@ -309,14 +441,29 @@ def one_question_test(df, word2vec):
 
     text_word = text_pred[0][0]
 
-    interp_input = np.concatenate((question_pred[0], text_pred[0][0]))
-    interp_pred = interp.predict(add_dim(interp_input)
+    interp_input = np.concatenate((question_pred[0], text_pred[0][0]), axis=-1)
+    interp_pred = interp.predict(add_dim(interp_input))
+    print(interp_pred)
+    print(answer[0])
+    print(interp_pred.shape)
+    print(answer[0].shape)
+    interp.fit(x=add_dim(interp_input), y=add_dim(answer[0]))
 
+    interp_pred = interp.predict(add_dim(interp_input))
 
+    print(interp_pred)
+    interp.fit(x=add_dim(interp_input), y=add_dim(answer[0]))
+
+    interp_pred = interp.predict(add_dim(interp_input))
+    print(interp_pred)
+    interp.fit(x=add_dim(interp_input), y=add_dim(answer[0]))
+
+    interp_pred = interp.predict(add_dim(interp_input))
+    print(interp_pred)
     return question_pred, text_pred
 
 
-question_pred, text_pred = one_question_test(df, word2vec)
+pred = one_question_test(df, word2vec)
 
 print(question_pred.shape)
 print(text_pred.shape)

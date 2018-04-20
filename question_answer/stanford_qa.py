@@ -79,7 +79,6 @@ class ContextRepeat(Layer):
             n_output_features)
 
 pred = one_question_test(df, word2vec)
-
 # model = combined_network()
 
 
@@ -345,7 +344,7 @@ interp = dense_interpreter_network()
 def example_map_matrix_to_text(matrix, words):
     print(len(words))
     print(matrix.shape)
-    sums = np.sum(matrix, axis=1)
+    sums = np.sum(matrix, axis=0)
     for n, word in enumerate(words):
         print("{}: {}".format(word, sums[n]))
 
@@ -432,6 +431,8 @@ def one_question_test(df, word2vec):
 
     pred = model.predict(x=[
         add_dim(question_mat), add_dim(text_mat)])
+
+    example_map_matrix_to_text(pred, text_words)
     return pred
     # pred =
     question_pred = question_reader.predict(add_dim(question_mat))

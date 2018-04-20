@@ -4,8 +4,27 @@ import json
 import string
 from util.text_util import get_word2vec_model
 from warnings import warn
+from collections import defaultdict
+import nltk
+from nltk.corpus import stopwords
+stopwords = stopwords.words('english')
+unknown_vectors = defaultdict(lambda: np.random.normal(size=(300,)))
+import regex as re
 
+def replace_digits(word):
+    replace_digits = re.compile("([0-9]{2,})")
+    new_str = str(word)
+    matches = replace_digits.finditer(word)
+    for m in matches:
+        new_str = new_str[:m.start(0)] + "#" * len(m[0]) + new_str[m.end(0):]
+    return new_str
+"#" * len(m[0])
 
+line = re.sub(
+           r"(?i)^.*interfaceOpDataFile.*$",
+           "interfaceOpDataFile %s" % fileIn,
+           line
+       )
 
 
 def get_word2vec_and_stanford_qa():
@@ -56,9 +75,10 @@ def clean_for_w2v(word):
     for ch in word:
         if ch in string.ascii_letters:
             rtn += ch
-        elif ch in string.digits:
-            rtn += "#"
-    return rtn
+        elif ch in string.punctuation:
+            rtn += '_'
+
+    return rtn.strip('_')
 
 
 
@@ -68,10 +88,15 @@ def get_vec(word, model, possible_next=None):
         try:
             return model.get_vector(word)
         except KeyError:
+            low = word.lower()
             try:
-                return model.get_vector(word.lower())
+                return model.get_vector(low)
             except KeyError:
-                return None
+                if low in stopwords:
+                    return None
+                else:
+                    print(word)
+                    return unknown_vectors[word]
 
     if False and possible_next:
         # disable this look-ahead for now, a little more complexity than is needed
@@ -112,7 +137,7 @@ def text_to_matrix(text, model):
 def text_to_matrix_with_answer(text, answer, answer_idx, model):
     # first remove punctuation
     words = text.split(' ')
-    # clean_words = map(clean_for_w2v, words)
+    # clean_words = map(clean_for_w2v, words)\
     answer_words = answer.split(' ')
     # clean_answer_words = map(clean_for_w2v, answer_words)
     in_answer = False
@@ -124,7 +149,10 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
     curr_char_idx = 0
 
     for n, word in enumerate(words):
-        if curr_char_idx == answer_idx:
+        if curr_char_idx <= answer_idx < curr_char_idx + len(word):
+            if answer_idx != curr_char_idx:
+                print("Watch out, was {} off because of {}".format(
+                    np.abs(answer_idx-curr_char_idx), word[:np.abs(answer_idx-curr_char_idx)]))
             in_answer = True
             # elif (curr_char_idx > answer_idx and curr_char_idx < answer_idx)
             # if we do a look-ahead, here is where we would check if we overlapped
@@ -138,10 +166,11 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
                     print("Answer: {}".format(answer))
                     print("Text: {}".format(text))
                     raise ValueError("Correct answer was not found in string")
-            elif word == answer_words[0]:
+            elif answer_words[0] in word:
                 answer_words_found += 1
                 answer_words = answer_words[1:]
             else:
+                print("The word was {} and I was expecting {}".format(word, answer_words[0]))
                 print("Wrong answer words")
                 print("Answer: {}".format(answer))
                 print("Text: {}".format(text))
@@ -163,8 +192,9 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
     if np.sum(answer_flags)==0:
         print("Answer: {}".format(answer))
         print("Text: {}".format(text))
-        warn("Answer words not found in word2vec!")
-    print(matrix.size)
+        print(answer_words)
+        print(words)
+        raise ValueError("Answer words not found in word2vec!")
     return (
         matrix,
         remaining_words,

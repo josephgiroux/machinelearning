@@ -5,7 +5,14 @@ from question_answer.network import combined_network
 reload(question_answer.network)
 from question_answer.network import combined_network
 
-word2vec, df = get_word2vec_and_stanford_qa()
-model = combined_network()
+import question_answer.process_data as p
+reload(question_answer.process_data)
+reload(p)
+reload(question_answer)
+import question_answer.process_data as p
 
-pred = one_question_test(df, word2vec, model)
+# from question_answer.process_data import *
+
+model = combined_network()
+word2vec, df = get_word2vec_and_stanford_qa()
+pred = p.one_question_test(df, word2vec, model)

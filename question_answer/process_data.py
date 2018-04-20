@@ -63,14 +63,23 @@ def clean_for_w2v(word):
 
 
 
-def get_vec(word, model):
-    try:
-        return model.get_vector(word)
-    except KeyError:
+def get_vec(word, model, possible_next=None):
+    def _get_vec(word):
         try:
-            return model.get_vector(word.lower())
+            return model.get_vector(word)
         except KeyError:
-            return None
+            try:
+                return model.get_vector(word.lower())
+            except KeyError:
+                return None
+
+    if False and possible_next:
+        # disable this look-ahead for now, a little more complexity than is needed
+        possible_combined = _get_vec("_".join([word, possible_next]))
+        if possible_combined is not None:
+            return possible_combined, 2
+    else:
+        return _get_vec(word), 1
 
 
 def text_to_matrix(text, model):
@@ -79,8 +88,17 @@ def text_to_matrix(text, model):
 
     vectors = []
     remaining_words = []
-    for word in words:
-        vec = get_vec(clean_for_w2v(word), model)
+    idx, end = 0, len(words)
+    clean_words = list(map(clean_for_w2v, words))
+    while idx < end:
+        word = clean_words[idx]
+        try:
+            possible_next = clean_words[idx+1]
+        except IndexError:
+            possible_next = None
+
+        vec, n = get_vec(word, model, possible_next)
+        idx += n
         if vec is None:
             continue
         vectors.append(vec)
@@ -91,10 +109,12 @@ def text_to_matrix(text, model):
 
 
 
-def text_to_matrix_with_answer(text, answer, answer_index, model):
+def text_to_matrix_with_answer(text, answer, answer_idx, model):
     # first remove punctuation
     words = text.split(' ')
+    # clean_words = map(clean_for_w2v, words)
     answer_words = answer.split(' ')
+    # clean_answer_words = map(clean_for_w2v, answer_words)
     in_answer = False
     num_answer_words = len(answer_words)
     answer_words_found = 0
@@ -102,9 +122,14 @@ def text_to_matrix_with_answer(text, answer, answer_index, model):
     answer_flags = []
     remaining_words = []
     curr_char_idx = 0
+
     for n, word in enumerate(words):
-        if curr_char_idx == answer_index:
+        if curr_char_idx == answer_idx:
             in_answer = True
+            # elif (curr_char_idx > answer_idx and curr_char_idx < answer_idx)
+            # if we do a look-ahead, here is where we would check if we overlapped
+            # the answer with the look-ahead... this is a to-do for later to see if
+            # the model needs extra juice
         if in_answer:
             if not answer_words:
                 in_answer = False
@@ -124,7 +149,7 @@ def text_to_matrix_with_answer(text, answer, answer_index, model):
 
 
         curr_char_idx += 1 + len(word)
-        vec = get_vec(clean_for_w2v(word), model)
+        vec, n = get_vec(clean_for_w2v(word), model)
         if vec is None:
             continue
         vectors.append(vec)
@@ -139,13 +164,17 @@ def text_to_matrix_with_answer(text, answer, answer_index, model):
         print("Answer: {}".format(answer))
         print("Text: {}".format(text))
         warn("Answer words not found in word2vec!")
-    return matrix, remaining_words, answer_flags
+    print(matrix.size)
+    return (
+        matrix,
+        remaining_words,
+        answer_flags,
+        answer_words_found,
+        len(remaining_words) - answer_words_found)
 
 
 
 def example_map_matrix_to_text(matrix, words):
-    print(len(words))
-    print(matrix.shape)
     sums = np.sum(matrix, axis=0)
     for n, word in enumerate(words):
         print("{}: {}".format(word, sums[n]))
@@ -158,12 +187,11 @@ def one_question_test(df, word2vec, model):
     question_mat, question_words = text_to_matrix(
         question, word2vec)
 
-    text_mat, text_words, answer = text_to_matrix_with_answer(
-        context, answer_text, answer_start, word2vec)
-
+    text_mat, text_words, answer, num_positive, num_negative = text_to_matrix_with_answer(
+        text=context, answer=answer_text,
+        answer_idx=answer_start, model=word2vec)
     def add_dim(mat):
         return mat.reshape([1]+list(mat.shape))
-
     pred = model.predict(x=[
         add_dim(question_mat), add_dim(text_mat)])
 
@@ -174,5 +202,6 @@ def one_question_test(df, word2vec, model):
         add_dim(text_mat)], add_dim(add_dim(answer)))
 
 
-
     return pred
+
+

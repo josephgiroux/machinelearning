@@ -1,12 +1,11 @@
-# thanks to Bharath, https://www.kaggle.com/bharathsh/stanford-q-a-json-to-clean-dataframe, for code adapted for this use
-#
+
 import pandas as pd
 import numpy as np
 import json
 import string
 from util.text_util import get_word2vec_model
 from keras.models import Model, Input
-from keras.layers import Conv1D, Dense, MaxPooling1D, GlobalAveragePooling1D, Lambda
+from keras.layers import Conv1D, Dense, GlobalMaxPooling1D, GlobalAveragePooling1D, Dropout, Lambda, Concatenate
 from keras.optimizers import Adam
 from keras.layers import LeakyReLU
 from keras import backend as K
@@ -16,13 +15,15 @@ from warnings import warn
 
 
 def main():
-    # word2vec = get_word2vec_model()
-
-
+    word2vec = get_word2vec_model()
     df = import_stanford_qa_data()
-
+    return word2vec, df
+word2vec, df = main()
 
 def import_stanford_qa_data():
+    # thanks to Bharath, https://www.kaggle.com/bharathsh/stanford-q-a-json-to-clean-dataframe,
+    # for code adapted for this use
+    #
     data_path = "D:/Datasets/stanford-question-answering-dataset/"
     train_path = data_path + 'train-v1.1.json'
     path = ['data', 'paragraphs', 'qas', 'answers']
@@ -184,6 +185,70 @@ def conv_test(n_features=300, lr=0.0001):
     return model
 
 
+def conv_reader_network(
+        n_features=300,
+        lr=0.0001,
+        conv_specifications=None,
+        pooling=None):
+    inp = Input((None, n_features), dtype='float32')
+
+    conv_specifications = conv_specifications or [
+        (2, 16),
+        (3, 32),
+        (4, 64),
+        (5, 128),
+        (6, 256), # second pair of last element is number of output features per word
+    ]
+    layer = inp
+    for n, (kernel_size, filters) in enumerate(conv_specifications):
+        if n:
+            combined = Concatenate()([layer, conv])
+            layer = combined
+        conv = Conv1D(
+            filters, kernel_size=(kernel_size,), padding='same',
+            kernel_initializer='glorot_normal')(layer)
+        conv = LeakyReLU()(conv)
+
+    print(conv.shape)
+    if pooling is not None:
+        conv = pooling()(conv)
+    model = Model(inputs=inp, outputs=conv)
+
+    model.summary()
+    return model
+
+
+def dense_interpreter_network(
+        n_question_features=64,
+        n_text_features=256,
+        dropout=0.5,
+        lr=0.0001):
+
+    neuron_counts = [1024, 256, 64, 16, 2]
+    inp = Input((n_question_features + n_text_features,))
+    layer = inp
+    for n, num_units in enumerate(neuron_counts):
+        if n:
+            layer = LeakyReLU()(layer)
+        layer = Dense(num_units)(layer)
+        layer = Dropout(dropout)(layer)
+
+    def loss_fn(y_true, y_pred, pos_weight=2):
+        return tf.nn.weighted_cross_entropy_with_logits(
+            targets=y_true,
+            logits=y_pred,
+            pos_weight=pos_weight,
+            name=None)
+
+    model = Model(inputs=inp, outputs=layer)
+    model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
+    model.summary()
+    return model
+
+
+
+interp = dense_interpreter_network()
+
 
 def example_map_matrix_to_text(matrix, words):
     print(len(words))
@@ -192,7 +257,79 @@ def example_map_matrix_to_text(matrix, words):
     for n, word in enumerate(words):
         print("{}: {}".format(word, sums[n]))
 
-model = conv_test()
+
+
+
+
+def get_readers():
+    question_reader_layers = [
+        (2, 4),
+        (3, 8),
+        (4, 16),
+        (5, 32),
+        (6, 64),
+    ]
+    text_reader_layers = [
+        (2, 16),
+        (3, 32),
+        (4, 64),
+        (5, 128),
+        (6, 256), # second pair of last element is number of output features per word
+    ]
+    question_reader = conv_reader_network(
+        conv_specifications=question_reader_layers,
+        pooling=GlobalAveragePooling1D)
+    text_reader = conv_reader_network(
+        conv_specifications=text_reader_layers)
+
+    return question_reader, text_reader
+
+
+
+question_reader, text_reader = get_readers()
+
+
+
+def one_question_test(df, word2vec):
+
+    question_reader, text_reader = get_readers()
+    question_mat, question_words = text_to_matrix(
+        question, word2vec)
+
+    text_mat, text_words, answer = text_to_matrix_with_answer(
+        context, answer_text, answer_start, word2vec)
+
+    def add_dim(mat):
+        return mat.reshape([1]+list(mat.shape))
+
+    question_pred = question_reader.predict(add_dim(question_mat))
+    text_pred = text_reader.predict(add_dim(text_mat))
+
+    interp = dense_interpreter_network()
+
+    text_word = text_pred[0][0]
+
+    interp_input = np.concatenate((question_pred[0], text_pred[0][0]))
+    interp_pred = interp.predict(add_dim(interp_input)
+
+
+    return question_pred, text_pred
+
+
+question_pred, text_pred = one_question_test(df, word2vec)
+
+print(question_pred.shape)
+print(text_pred.shape)
+
+
+# read a question and text
+
+
+
+
+
+
+# model = conv_test()
 
 question, context, answer_start, answer_text = extract_fields(df, 1)
 
@@ -202,6 +339,8 @@ mat, words, answer = text_to_matrix_with_answer(
     context, answer_text, answer_start, word2vec)
 
 x = mat.reshape([1]+list(mat.shape))
+
+pred = reader.predict(x)
 pred = model.predict(x)
 print(pred.shape)
 model.fit(x, answer)
@@ -212,6 +351,7 @@ for n, (w, ans) in enumerate(zip(words, answer)):
 
 example_map_matrix_to_text(mat, words)
 
+example_map_matrix_to_text(pred[0], words)
 
 print(mat.shape)
 

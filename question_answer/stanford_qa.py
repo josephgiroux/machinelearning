@@ -93,33 +93,6 @@ question_reader, text_reader = get_readers()
 
 
 
-def one_question_test(df, word2vec):
-    question, context, answer_start, answer_text = extract_fields(df, 1)
-    # question_reader, text_reader = get_readers()
-    model = combined_network()
-    question_mat, question_words = text_to_matrix(
-        question, word2vec)
-
-    text_mat, text_words, answer = text_to_matrix_with_answer(
-        context, answer_text, answer_start, word2vec)
-
-    def add_dim(mat):
-        return mat.reshape([1]+list(mat.shape))
-
-    pred = model.predict(x=[
-        add_dim(question_mat), add_dim(text_mat)])
-
-    example_map_matrix_to_text(pred, text_words)
-    model.summary()
-    model.fit([
-        add_dim(question_mat),
-        add_dim(text_mat)], add_dim(add_dim(answer)))
-
-
-
-    return pred
-
-
 
 
 

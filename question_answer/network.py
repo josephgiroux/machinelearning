@@ -13,7 +13,6 @@ from keras import backend as K
 from keras.engine.topology import Layer
 import tensorflow as tf
 from warnings import warn
-
 from question_answer.layer import ContextRepeat
 
 
@@ -65,14 +64,6 @@ def dense_interpreter_network(
         layer = Dense(num_units)(layer)
         layer = Dropout(dropout)(layer)
 
-    def loss_fn(y_true, y_pred, pos_weight=10):
-        return tf.nn.weighted_cross_entropy_with_logits(
-            targets=y_true,
-            logits=y_pred,
-            pos_weight=pos_weight,
-            name=None)
-
-    # model.summary()
     return layer
 
 
@@ -108,9 +99,6 @@ def combined_network(
     # model.summary()
     model.compile(optimizer=Adam(lr=0.0001), loss=loss_fn)
     return model
-
-combined_network()
-
 
 
 def get_readers(

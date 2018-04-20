@@ -24,7 +24,6 @@ def import_stanford_qa_data():
     path = ['data', 'paragraphs', 'qas', 'answers']
     with open(train_path) as fh:
         raw_json = json.loads(fh.read())
-    print(raw_json)
 
     js = pd.io.json.json_normalize(raw_json, path)
     m = pd.io.json.json_normalize(raw_json, path[:-1])
@@ -42,14 +41,7 @@ def import_stanford_qa_data():
     df['c_id'] = df['context'].factorize()[0]
     df.head()
     return df
-#
-# one_row = df['id', :]
-#
-# for row in df:
-#     print(row)
-#     break
-# row = df.iloc[1, :]
-# print(row)
+
 
 
 def extract_fields(df, idx):
@@ -157,3 +149,30 @@ def example_map_matrix_to_text(matrix, words):
     sums = np.sum(matrix, axis=0)
     for n, word in enumerate(words):
         print("{}: {}".format(word, sums[n]))
+
+
+
+def one_question_test(df, word2vec, model):
+    question, context, answer_start, answer_text = extract_fields(df, 1)
+    # question_reader, text_reader = get_readers()
+    question_mat, question_words = text_to_matrix(
+        question, word2vec)
+
+    text_mat, text_words, answer = text_to_matrix_with_answer(
+        context, answer_text, answer_start, word2vec)
+
+    def add_dim(mat):
+        return mat.reshape([1]+list(mat.shape))
+
+    pred = model.predict(x=[
+        add_dim(question_mat), add_dim(text_mat)])
+
+    example_map_matrix_to_text(pred, text_words)
+    model.summary()
+    model.fit([
+        add_dim(question_mat),
+        add_dim(text_mat)], add_dim(add_dim(answer)))
+
+
+
+    return pred

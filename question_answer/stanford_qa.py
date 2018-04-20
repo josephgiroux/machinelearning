@@ -206,7 +206,7 @@ def text_to_matrix_with_answer(text, answer, answer_index, model):
         vectors.append(vec)
         remaining_words.append(word)
         answer_flags.append(np.array(
-            (int(in_answer), int(not in_answer))))
+            int(in_answer)))
 
     assert len(answer_flags) == len(remaining_words)
     matrix = np.stack(vectors)
@@ -237,7 +237,7 @@ def conv_test(n_features=300, lr=0.0001):
     #
     # layer = LeakyReLU()(layer)
 
-    def loss_fn(y_true, y_pred, pos_weight=2):
+    def loss_fn(y_true, y_pred, pos_weight=10):
         return tf.nn.weighted_cross_entropy_with_logits(
             targets=y_true,
             logits=y_pred,
@@ -291,7 +291,7 @@ def dense_interpreter_network(
         dropout=0.5,
         lr=0.0001):
 
-    neuron_counts = [1024, 256, 64, 16, 2]
+    neuron_counts = [1024, 256, 64, 16, 1]
     inp = Input((n_question_features + n_text_features,))
     layer = inp
     for n, num_units in enumerate(neuron_counts):
@@ -308,7 +308,7 @@ def dense_interpreter_network(
             name=None)
 
     model = Model(inputs=inp, outputs=layer)
-    model.summary()
+    # model.summary()
     return model, inp, layer
 
 
@@ -321,14 +321,14 @@ def dense_interpreter_network_connected(
         dropout=0.5,
         lr=0.0001):
 
-    neuron_counts = [1024, 256, 64, 16, 2]
+    neuron_counts = [1024, 256, 64, 16, 1]
     layer = ContextRepeat()([text_inputs, question_inputs])
     layer = TimeDistributed(Dense(neuron_counts[0]))(layer)
     for num_units in neuron_counts[1:]:
         layer = Dense(num_units)(layer)
         layer = Dropout(dropout)(layer)
 
-    def loss_fn(y_true, y_pred, pos_weight=2):
+    def loss_fn(y_true, y_pred, pos_weight=10):
         return tf.nn.weighted_cross_entropy_with_logits(
             targets=y_true,
             logits=y_pred,
@@ -378,7 +378,14 @@ def combined_network(
     #     conv = pooling()(conv)
     model = Model(inputs=[question_inputs, text_inputs], outputs=dense_out)
 
+    def loss_fn(y_true, y_pred, pos_weight=10):
+        return tf.nn.weighted_cross_entropy_with_logits(
+            targets=y_true,
+            logits=y_pred,
+            pos_weight=pos_weight,
+            name=None)
     # model.summary()
+    model.compile(optimizer=Adam(lr=0.0001), loss=loss_fn)
     return model
 
 combined_network()
@@ -433,38 +440,22 @@ def one_question_test(df, word2vec):
         add_dim(question_mat), add_dim(text_mat)])
 
     example_map_matrix_to_text(pred, text_words)
+    model.summary()
+    model.fit([
+        add_dim(question_mat),
+        add_dim(text_mat)], add_dim(add_dim(answer)))
+
+
+
     return pred
-    # pred =
-    question_pred = question_reader.predict(add_dim(question_mat))
-    text_pred = text_reader.predict(add_dim(text_mat))
 
-    interp = dense_interpreter_network()
 
-    text_word = text_pred[0][0]
 
-    interp_input = np.concatenate((question_pred[0], text_pred[0][0]), axis=-1)
-    interp_pred = interp.predict(add_dim(interp_input))
-    print(interp_pred)
-    print(answer[0])
-    print(interp_pred.shape)
-    print(answer[0].shape)
-    interp.fit(x=add_dim(interp_input), y=add_dim(answer[0]))
-
-    interp_pred = interp.predict(add_dim(interp_input))
-
-    print(interp_pred)
-    interp.fit(x=add_dim(interp_input), y=add_dim(answer[0]))
-
-    interp_pred = interp.predict(add_dim(interp_input))
-    print(interp_pred)
-    interp.fit(x=add_dim(interp_input), y=add_dim(answer[0]))
-
-    interp_pred = interp.predict(add_dim(interp_input))
-    print(interp_pred)
-    return question_pred, text_pred
 
 
 pred = one_question_test(df, word2vec)
+
+model.fit(x, answer)
 
 print(question_pred.shape)
 print(text_pred.shape)

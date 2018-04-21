@@ -13,7 +13,8 @@ import regex as re
 import unidecode
 re.DEFAULT_VERSION = re.VERSION1
 replace_digits_rgx = re.compile("([0-9,]+[0-9]+)")
-splitter_rgx = re.compile("[ .'\"&/\-]")
+o_point_rgx = re.compile("[.][0-9]+[%]")
+splitter_rgx = re.compile("[— .'\"&/\-–()~]")
 
 suffix_replacements = {
     'ised': 'ized',
@@ -44,15 +45,26 @@ def split_with_dollarsign(text):
     rtn = []
     for word in words:
         # whole lot hassle to split off dollar sign as its own word
-        if '$' in word:
-            for n, w in enumerate(word.split('$')):
-                if n:
-                    rtn.append('$')
-                rtn.append(w)
-        else:
-            rtn.append(word)
+        # while not losing track of the answer index
+
+        subparsed = subparse_for_dollarsigns(word)
+        rtn += subparsed
     return rtn
 
+def subparse_for_dollarsigns(word):
+    rtn = []
+    for ch in ['CAD$', 'US$', 'CN¥', 'GB£', 'C$', 'NZ$', 'NT$', 'A$', 'S$', 'R$', '#$', '$', '£', '¥', '€']:
+        if ch in word:
+            if word == ch:
+                return [word, '']
+            for n, w in enumerate(word.split(ch)):
+                if n:
+                    rtn.append(ch)
+                if w or n:
+                    rtn.append(w)
+            return rtn
+    else:
+        return [word]
 
 
 def import_stanford_qa_data():
@@ -80,6 +92,31 @@ def import_stanford_qa_data():
 
     df['c_id'] = df['context'].factorize()[0]
     df.head()
+    df = one_off_corrections(df)
+    return df
+
+
+def one_off_corrections(df):
+    for idx in range(df.shape[0]):
+        answer = df.loc[idx, 'text']
+        if answer.startswith(". "):
+            df.loc[idx, 'text'] = answer[2:]
+            df.loc[idx, 'answer_start'] += 2
+    df.loc[55764, 'answer_start'] = 370
+    df.loc[55764, 'text'] = 'lower-elevation areas of the Piedmont'
+    df.loc[70455, 'answer_start'] = 495
+    df.loc[70455, 'text'] = 'somehow-belligerent'
+    df.loc[85016, 'answer_start'] = 387
+
+    df.loc[85016, 'text'] = '38%'
+    # df.loc[36157, 'answer_start'] = 179
+    # df.loc[36157, 'text'] = '6-months'
+    #
+    # df.loc[36212, 'answer_start'] = 132
+    # df.loc[36212, 'text'] = 'as white or "other."'
+    #
+    # df.loc[36257, 'answer_start'] = 371
+    # df.loc[36257, 'text'] = 'Diverse immigration'
     return df
 
 
@@ -88,6 +125,7 @@ def extract_fields(df, idx):
     row = df.iloc[idx]
     question, context, answer_start, answer_text = row.loc[[
         'question', 'context', 'answer_start', 'text']]
+
     return question, context, answer_start, answer_text
 
 
@@ -97,7 +135,7 @@ def clean_for_w2v(word):
     for ch in word:
         if ch.isalnum():
             rtn += ch
-        elif ch in '$#':
+        elif ch in '$£¥€#':
             rtn += ch
         elif ch in string.punctuation:
             # Possibly save/split out meaningful punctuation, like $ --
@@ -109,22 +147,52 @@ def clean_for_w2v(word):
     return rtn.strip('_')
 
 
+def sep_digits(word):
+    first = ""
+    second = ""
+    dig_first = None
+    for n, ch in enumerate(word):
+        if not n:
+            dig_first = ch=='#'
 
+        if ch == '#':
+            if dig_first:
+                first += ch
+            else:
+                second += ch
+        else:
+            if dig_first:
+                second += ch
+            else:
+                first += ch
+
+    return first, second
 
 def get_vec(word, model, possible_next=None):
     if not word:
-        return None, 1
+        return [None], [None], 1
+    if word in ['US$', 'CAD$', 'C$', 'NZ$', 'NT$', 'A$', 'S$', 'R$']:
+        return [model.get_vector('$')], [word], 0
+    elif word == 'CN¥':
+        return [model.get_vector('¥')], [word], 0
+    elif word == 'GB£':
+        return [model.get_vector('£')], [word], 0
+    elif word in ['£', '$', '¥', '€']:
+        return [model.get_vector(word)], [word], 0
+    elif word == '#$':
+        return [None], [word], 0
+
     orig = word
     def _get_vec(word):
         try:
-            return model.get_vector(word)
+            return [model.get_vector(word)], [word], 1
         except KeyError:
             word = word.lower()
             try:
-                return model.get_vector(word)
+                return [model.get_vector(word)], [word], 1
             except KeyError:
                 if word in stopwords:
-                    return None
+                    return [None], [word], 1
                 else:
 
                     for k,v in suffix_replacements.items():
@@ -133,10 +201,25 @@ def get_vec(word, model, possible_next=None):
 
                     word = unidecode.unidecode(word)
                     try:
-                        return model.get_vector(word)
+                        return [model.get_vector(word)], [word], 1
                     except KeyError:
                         print(orig, word)
-                        return unknown_vectors[word]
+
+                        if '#' in word:
+                            try:
+                                first, second = sep_digits(word)
+                                rtn = []
+                                for part in [first, second]:
+                                    if part:
+                                        try:
+                                            rtn.append(model.get_vector(part))
+                                        except KeyError:
+                                            rtn.append(unknown_vectors[part])
+                                return rtn, [first, second], 1
+                            except KeyError:
+                                return [unknown_vectors[word]], [word], 1
+                        else:
+                            return [unknown_vectors[word]], [word], 1
 
     if False and possible_next:
         # disable this look-ahead for now, a little more complexity than is needed
@@ -148,7 +231,7 @@ def get_vec(word, model, possible_next=None):
         # itself, in order to keep the character counter
         # from advancing an extra character every time a $
         # is seen, it has to return 0 in that case.
-        return _get_vec(word), word != '$'
+        return _get_vec(word)
 
 
 def text_to_matrix(text, model):
@@ -166,12 +249,14 @@ def text_to_matrix(text, model):
         except IndexError:
             possible_next = None
 
-        vec, n = get_vec(word, model, possible_next)
-        idx += n
-        if vec is None:
-            continue
-        vectors.append(vec)
-        remaining_words.append(word)
+        vecs, words, n = get_vec(word, model, possible_next)
+        idx += n + len(word)
+
+        for vec, word in zip(vecs, words):
+            if vec is None:
+                continue
+            vectors.append(vec)
+            remaining_words.append(word)
 
     matrix = np.stack(vectors)
     return matrix, remaining_words
@@ -194,11 +279,14 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
 
     for n, word in enumerate(words):
 
-        if curr_char_idx <= answer_idx <= curr_char_idx + len(word):
+        # print((word, curr_char_idx, answer_idx))
+        if curr_char_idx == answer_idx or (
+                word and curr_char_idx <= answer_idx < (curr_char_idx + (len(word) or 1))):
             print((word, curr_char_idx, answer_idx))
             if answer_idx != curr_char_idx:
                 print("Watch out, was {} off because of {}".format(
-                    np.abs(answer_idx-curr_char_idx), word[:np.abs(answer_idx-curr_char_idx)]))
+                    np.abs(answer_idx-curr_char_idx),
+                    word[:np.abs(answer_idx-curr_char_idx)]))
             in_answer = True
             # elif (curr_char_idx > answer_idx and curr_char_idx < answer_idx)
             # if we do a look-ahead, here is where we would check if we overlapped
@@ -225,14 +313,16 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
                 raise ValueError("Words came out of order.")
 
 
-        vec, inc = get_vec(clean_for_w2v(word), model)
+        vecs, words, inc = get_vec(clean_for_w2v(word), model)
         curr_char_idx += inc + len(word)
-        if vec is None:
-            continue
-        vectors.append(vec)
-        remaining_words.append(word)
-        answer_flags.append(np.array(
-            int(in_answer)))
+
+        for vec, word in zip(vecs, words):
+            if vec is None:
+                continue
+            vectors.append(vec)
+            remaining_words.append(word)
+            answer_flags.append(np.array(
+                int(in_answer)))
 
     assert len(answer_flags) == len(remaining_words)
     matrix = np.stack(vectors)
@@ -271,6 +361,8 @@ def one_question_test(df, word2vec, model):
         text=context, answer=answer_text,
         answer_idx=answer_start, model=word2vec)
 
+
+
     def add_dim(mat):
         return mat.reshape([1]+list(mat.shape))
 
@@ -298,16 +390,26 @@ def add_vector_information(df, word2vec, n=10):
     total_neg = 0
     # for idx in range(n_rows):
     #     print(idx)
-    for idx in range(n_rows):
+    for idx in range(n_rows): #  range(n_rows):
         print(idx)
         question, context, answer_start, answer_text = extract_fields(df, idx)
+        print(question)
+        print(answer_start)
+        print(answer_text)
+        # especially annoying special cases
+        if answer_text != '.50-inch' and o_point_rgx.match(answer_text):
+            answer_text = "0" + answer_text
+            answer_start -= 1
 
         question_mat, question_words = text_to_matrix(
             text=question, model=word2vec)
-
         text_mat, text_words, answer_vec, num_pos, num_neg = text_to_matrix_with_answer(
             text=context, answer=answer_text,
             answer_idx=answer_start, model=word2vec)
+
+        # df.loc[idx, 'text_matrix'] = text_mat
+        # df.loc[idx,'question_matrix'] = question_mat
+        # df.loc[idx, 'answer_vector'] = answer_vec
 
         df.iloc[idx].at['text_matrix'] = text_mat
         df.iloc[idx].at['question_matrix'] = question_mat
@@ -320,3 +422,8 @@ def add_vector_information(df, word2vec, n=10):
         "\nPositive should be weighted about {}.".format(
             total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
     return df
+
+
+
+
+

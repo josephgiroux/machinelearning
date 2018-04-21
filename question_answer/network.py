@@ -18,7 +18,7 @@ from question_answer.layer import ContextRepeat
 
 def conv_reader_network(
         n_features=300,
-        lr=0.00001,
+        lr=0.00004,
         conv_specifications=None,
         pooling=None):
     inp = Input((None, n_features), dtype='float32')
@@ -40,12 +40,17 @@ def conv_reader_network(
             kernel_initializer='glorot_normal')(layer)
         conv = LeakyReLU()(conv)
 
+    unpooled_out = conv
     if pooling is not None:
-        conv = pooling()(conv)
-    model = Model(inputs=inp, outputs=conv)
+        pooled_out = pooling()(unpooled_out)
+        model = Model(inputs=inp, outputs=pooled_out)
+    else:
+        pooled_out = None
+        model = Model(inputs=inp, outputs=unpooled_out)
+
 
     model.summary()
-    return model, inp, conv
+    return model, inp, unpooled_out, pooled_out
 
 
 def dense_interpreter_network(
@@ -97,7 +102,45 @@ def combined_network(
             pos_weight=pos_weight,
             name=None)
     # model.summary()
-    model.compile(optimizer=Adam(lr=0.00001), loss=loss_fn)
+    model.compile(optimizer=Adam(lr=0.00004), loss=loss_fn)
+    return model
+
+
+def combined_network_one_reader(
+        n_word_features=300,
+        reader_layers=None,
+        question_pooling=GlobalAveragePooling1D,
+        pos_weight=30,
+        ):
+
+
+    reader, reader_inputs, reader_unpooled_output, reader_pooled_output = conv_reader_network(
+        conv_specifications=reader_layers,
+        pooling=GlobalAveragePooling1D)
+
+    reader_layers = reader_layers or [
+        (2, 16),
+        (3, 32),
+        (4, 64),
+        (5, 128),
+        (6, 256), # second pair of last element is number of output features per word
+    ]
+    dense_out = dense_interpreter_network(
+        question_inputs=question_outputs,
+        text_inputs=text_outputs)
+
+    model = Model(
+        inputs=[question_inputs, text_inputs],
+        outputs=dense_out)
+
+    def loss_fn(y_true, y_pred, pos_weight=pos_weight):
+        return tf.nn.weighted_cross_entropy_with_logits(
+            targets=y_true,
+            logits=y_pred,
+            pos_weight=pos_weight,
+            name=None)
+    # model.summary()
+    model.compile(optimizer=Adam(lr=0.00004), loss=loss_fn)
     return model
 
 
@@ -119,10 +162,10 @@ def get_readers(
         (5, 128),
         (6, 256), # second pair of last element is number of output features per word
     ]
-    question_reader, question_inputs, question_outputs = conv_reader_network(
+    question_reader, question_inputs, _, question_outputs = conv_reader_network(
         conv_specifications=question_reader_layers,
         pooling=GlobalAveragePooling1D)
-    text_reader, text_inputs, text_outputs = conv_reader_network(
+    text_reader, text_inputs, text_outputs, _ = conv_reader_network(
         conv_specifications=text_reader_layers)
 
     return (

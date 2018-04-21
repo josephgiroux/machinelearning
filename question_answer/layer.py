@@ -18,21 +18,41 @@ class ContextRepeat(Layer):
         # print("N repeats", n_repeats, n_repeats.shape)
         #
 
+        print("Timed inputs:", timed_inputs.shape)
+        print("Fixed inputs:", fixed_inputs.shape)
+        batch_size = tf.shape(timed_inputs)[0]
+        print("Batch size:", batch_size)
         n_fixed_features = tf.shape(fixed_inputs)[-1]
-        fixed_inputs = tf.reshape(
-            fixed_inputs, shape=(n_fixed_features,))
+        new_size = n_fixed_features * 32
+        print("New size: ", new_size)
 
         n_timesteps = tf.shape(timed_inputs)[-2:-1]
-        tiled = tf.tile(fixed_inputs, n_timesteps)
-        # not really tiled so much as appended into a long list
+        print("n_timesteps:", n_timesteps)
+        tile_shape = [batch_size, 1, n_fixed_features]
+        tile = tf.reshape(fixed_inputs, tile_shape)
 
-        new_shape = [1, n_timesteps[0], n_fixed_features]
-        # get the shape to convert it to
+        tile_multiples = (tf.constant(1), n_timesteps[0], tf.constant(1))
 
-        matrix = tf.reshape(tiled, new_shape)
-        # now lay it down in true "tiles"
+        tiled = tf.tile(tile, tile_multiples)
 
-        combined_matrix = tf.concat((timed_inputs, matrix), axis=-1)
+        combined_matrix = tf.concat((timed_inputs, tiled), axis=-1)
+
+        new_shape = [32, 104, 64]
+        print("new_shape", new_shape)
+        print("matrix shape:", combined_matrix.shape)
+        # fixed_inputs = tf.reshape(
+        #     fixed_inputs, shape=(-1, n_fixed_features))
+        # print(fixed_inputs.shape)
+        # tiled = tf.tile(fixed_inputs, n_timesteps)
+        # # not really tiled so much as appended into a long list
+        #
+        # new_shape = [batch_size, n_timesteps[0], n_fixed_features]
+        # # get the shape to convert it to
+        #
+        # matrix = tf.reshape(tiled, new_shape)
+        # # now lay it down in true "tiles"
+
+        print(combined_matrix.shape)
         # put alongside the timestep-specific vectors
 
         return combined_matrix

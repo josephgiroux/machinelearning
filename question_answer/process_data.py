@@ -28,6 +28,9 @@ suffix_replacements = {
 }
 
 VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector.pkl"
+MODEL_PATH = "C:/Users/Joseph Giroux/Datasets/qa_model.h5"
+
+VECTOR_BATCH_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector_{}.pkl"
 DF_PICKLE = "C:/Users/Joseph Giroux/Datasets/df.pkl"
 
 def replace_digits(word):
@@ -42,7 +45,6 @@ def replace_digits(word):
 def get_word2vec_and_stanford_qa_from_scratch():
     word2vec = get_word2vec_model()
     df = import_stanford_qa_data()
-    df = one_off_corrections(df)
     vectors = get_vector_information(df, word2vec)
     return word2vec, df, vectors
 
@@ -51,10 +53,29 @@ def save_vectors_and_df(vectors, df):
     pickle_me(vectors, VECTOR_PICKLE)
     pickle_me(df, DF_PICKLE)
 
+def save_model(model):
+    model.save(MODEL_PATH)
+
+
 def get_stanford_qa_and_vectors_pickled():
     df = unpickle_me(DF_PICKLE)
     vectors = unpickle_me(VECTOR_PICKLE)
     return df, vectors
+
+def pickle_vectors_in_batches(
+        vectors, batch_size=10000):
+
+    for n in range(1, int(len(vectors)/batch_size)+2):
+        start = 0 + batch_size * (n-1)
+        end = start + 10000
+        batch = vectors[start:end]
+        pickle_file = VECTOR_BATCH_PICKLE.format(n)
+        pickle_me(batch, pickle_file)
+
+def pad_vectors(vector_batch):
+    longest_question_vector = 0
+    longest_text_vector = 0
+
 
 def split_with_dollarsign(text):
     words = splitter_rgx.split(text)
@@ -276,6 +297,8 @@ def text_to_matrix(text, model):
 
     matrix = np.stack(vectors)
     return matrix, remaining_words
+
+
 
 
 
@@ -520,4 +543,54 @@ def get_train_test_valid_groups(vectors):
     return (all_train, all_test, all_valid, all_final_valid)
 
 
+def consolidate_text_vectors(df, raw_vectors):
+    text_vectors = dict()
+    for idx, row in enumerate(raw_vectors):
+        c_id = df.iloc[idx].loc['c_id']
+        text_vectors[c_id] = row["text_matrix"]
+
+    return text_vectors
+
+
+def remove_text_vectors(raw_vectors):
+    for row in raw_vectors:
+        row.pop('text_matrix', None)
+
+
+def pad_text_vectors(text_vectors, n_features=300):
+    longest_text = len(max(text_vectors.items(), key=len))
+    text_vectors = {k: pad_vector_list(
+        v, desired_len=longest_text, n_features=n_features
+        ) for k,v in text_vectors.items()}
+    return text_vectors
+
+
+def pad_vector_list(vectors, desired_len, n_features=300):
+    diff = desired_len - len(vectors)
+    if diff < 0:
+        raise ValueError("Can't pad to a shorter length")
+
+    if diff:
+        post_pad = diff // 2
+        pre_pad = diff - post_pad
+        vectors = ([np.zeros(n_features, )] * pre_pad) + vectors + (
+                [np.zeros(n_features, )] * post_pad)
+
+    return vectors
+
+
+def pad_question_vectors(vectors, n_features=300):
+    longest_question = 0
+    for row in vectors:
+        longest_question = max(
+            longest_question,
+            len(row["question_matrix"]))
+
+    for row in vectors:
+        row["question_matrix"] = pad_vector_list(
+            row["question_matrix"],
+            desired_len=longest_question,
+            n_features=n_features)
+
+    return vectors
 

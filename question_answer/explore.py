@@ -1,3 +1,8 @@
+
+
+
+
+
 from importlib import reload
 from question_answer.process_data import *
 import question_answer
@@ -19,15 +24,48 @@ import question_answer.process_data as p
 
 
 model = combined_network()
+
+
+
 df, vectors = get_stanford_qa_and_vectors_pickled()
 
 (all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(vectors)
 
+train_text_x, train_question_x, train_y = all_train
+
+
+
+print(np.repeat(train_text_x[1], 32, axis=0).shape)
+
+print(np.repeat(train_question_x[1], 32, axis=0).shape)
+print(np.repeat(train_y[1], 32, axis=0).shape)
+
+
+total_loss = 0.0
+rounds = 0
+train_size = 10000
+indices = list(range(60000))
+network = combined_network()
+
+
+for _ in range(1):
+    n = np.random.choice(indices)
+    n = 1
+    h = model.fit(
+        x=[np.repeat(train_text_x[n], 32, axis=0),
+           np.repeat(train_question_x[n], 32, axis=0)],
+        y=np.repeat(train_y[n], 32, axis=0),
+        batch_size=32)
+
+    total_loss += h.history["loss"][0]
+    rounds += 1
+    print(total_loss/rounds)
+
+print(h.history)
 
 start = 0
 end = 100
 
-train_text_x, train_question_x, train_y = all_train
 
 text_batch = train_text_x[start:end]
 question_batch = train_question_x[start:end]
@@ -59,21 +97,6 @@ print(np.repeat(train_text_x[1], 32, axis=0).shape)
 print(np.repeat(train_question_x[1], 32, axis=0).shape)
 print(np.repeat(train_y[1], 32, axis=0).shape)
 
-total_loss = 0.0
-rounds = 0
-train_size = 10000
-indices = list(range(60000))
-for _ in range(train_size):
-    n = np.random.choice(indices)
-    h = model.fit(
-        x=[np.repeat(train_text_x[n], 32, axis=0),
-           np.repeat(train_question_x[n], 32, axis=0)],
-        y=np.repeat(train_y[n], 32, axis=0), batch_size=32)
-    total_loss += h.history["loss"][0]
-    rounds += 1
-    print(total_loss/rounds)
-
-print(h.history)
 
 
 h = model.fit(

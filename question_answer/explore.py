@@ -4,7 +4,7 @@ import question_answer
 from question_answer.network import combined_network
 reload(question_answer.network)
 from question_answer.network import combined_network
-
+from question_answer.util import *
 import question_answer.process_data as p
 reload(question_answer.process_data)
 reload(p)

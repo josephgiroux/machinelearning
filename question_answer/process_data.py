@@ -11,6 +11,8 @@ stopwords = stopwords.words('english')
 unknown_vectors = defaultdict(lambda: np.random.normal(size=(300,)))
 import regex as re
 import unidecode
+from question_answer.util import pickle_me, unpickle_me
+
 re.DEFAULT_VERSION = re.VERSION1
 replace_digits_rgx = re.compile("([0-9,]+[0-9]+)")
 o_point_rgx = re.compile("[.][0-9]+[%]")
@@ -25,6 +27,9 @@ suffix_replacements = {
     'ourite': 'orite',
 }
 
+VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector.pkl"
+DF_PICKLE = "C:/Users/Joseph Giroux/Datasets/df.pkl"
+
 def replace_digits(word):
     new_str = str(word)
     matches = replace_digits_rgx.finditer(word)
@@ -34,11 +39,22 @@ def replace_digits(word):
 
 
 
-def get_word2vec_and_stanford_qa():
+def get_word2vec_and_stanford_qa_from_scratch():
     word2vec = get_word2vec_model()
     df = import_stanford_qa_data()
-    return word2vec, df
+    df = one_off_corrections(df)
+    vectors = get_vector_information(df, word2vec)
+    return word2vec, df, vectors
 
+
+def save_vectors_and_df(vectors, df):
+    pickle_me(vectors, VECTOR_PICKLE)
+    pickle_me(df, DF_PICKLE)
+
+def get_stanford_qa_and_vectors_pickled():
+    df = unpickle_me(DF_PICKLE)
+    vectors = unpickle_me(VECTOR_PICKLE)
+    return df, vectors
 
 def split_with_dollarsign(text):
     words = splitter_rgx.split(text)
@@ -380,7 +396,9 @@ def one_question_test(df, word2vec, model):
 
 
 
-def add_vector_information(df, word2vec, n=10):
+def get_vector_information(df, word2vec, n=10):
+    vectors = []
+
     df['text_matrix'] = None
     df['question_matrix'] = None
     df['answer_vector'] = None
@@ -414,6 +432,16 @@ def add_vector_information(df, word2vec, n=10):
         df.iloc[idx].at['text_matrix'] = text_mat
         df.iloc[idx].at['question_matrix'] = question_mat
         df.iloc[idx].at['answer_vector'] = answer_vec
+
+        row = dict(
+            idx=idx,
+            question=question,
+            text=context,
+            answer=answer_text,
+            text_matrix=text_mat,
+            question_matrix=question_mat,
+            answer_vector=answer_vec,)
+        vectors.append(row)
         total_pos += num_pos
         total_neg += num_neg
 
@@ -421,9 +449,75 @@ def add_vector_information(df, word2vec, n=10):
         "On average there were {} answer words and {} other words per row."
         "\nPositive should be weighted about {}.".format(
             total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
-    return df
+    return vectors
 
 
+
+def get_train_test_valid_groups(vectors):
+    total = 87599
+    assert total == len(vectors)
+    train = 1
+    test = 2
+    valid = 3
+    final_valid = 4
+    assignments = []
+
+
+    train_text_x = []
+    train_question_x = []
+
+    train_y = []
+    test_text_x = []
+    test_question_x = []
+    test_y = []
+    valid_text_x = []
+    valid_question_x = []
+
+    valid_y = []
+
+    final_valid_text_x = []
+    final_valid_question_x = []
+    final_valid_y = []
+
+    def assign(idx):
+        if idx >= 80000:
+            return final_valid
+        else:
+            grp = idx % 8
+            if grp == 7:
+                return valid
+            if grp == 6:
+                return test
+            else:
+                return train
+
+    def add_dim(mat):
+        return mat.reshape([1] + list(mat.shape))
+
+    for n in range(total):
+        group = assign(n)
+        if group == train:
+            train_text_x.append(add_dim(vectors[n]["text_matrix"]))
+            train_question_x.append(add_dim(vectors[n]["question_matrix"]))
+            train_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+        elif group == test:
+            test_text_x.append(add_dim(vectors[n]["text_matrix"]))
+            test_question_x.append(add_dim(vectors[n]["question_matrix"]))
+            test_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+        elif group == valid:
+            valid_text_x.append(add_dim(vectors[n]["text_matrix"]))
+            valid_question_x.append(add_dim(vectors[n]["question_matrix"]))
+            valid_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+        elif group == final_valid:
+            final_valid_text_x.append(add_dim(vectors[n]["text_matrix"]))
+            final_valid_question_x.append(add_dim(vectors[n]["question_matrix"]))
+            final_valid_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+
+    all_train = (train_text_x, train_question_x, train_y)
+    all_test = (test_text_x, test_question_x, test_y)
+    all_valid = (valid_text_x, valid_question_x, valid_y)
+    all_final_valid = (final_valid_text_x, final_valid_question_x, final_valid_y)
+    return (all_train, all_test, all_valid, all_final_valid)
 
 
 

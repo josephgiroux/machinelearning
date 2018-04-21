@@ -18,7 +18,7 @@ from question_answer.layer import ContextRepeat
 
 def conv_reader_network(
         n_features=300,
-        lr=0.0001,
+        lr=0.00001,
         conv_specifications=None,
         pooling=None):
     inp = Input((None, n_features), dtype='float32')
@@ -40,7 +40,6 @@ def conv_reader_network(
             kernel_initializer='glorot_normal')(layer)
         conv = LeakyReLU()(conv)
 
-    print(conv.shape)
     if pooling is not None:
         conv = pooling()(conv)
     model = Model(inputs=inp, outputs=conv)
@@ -73,6 +72,7 @@ def combined_network(
         text_reader_layers=None,
         question_reader_layers=None,
         question_pooling=GlobalAveragePooling1D,
+        pos_weight=30,
         ):
 
     (
@@ -90,14 +90,14 @@ def combined_network(
         inputs=[question_inputs, text_inputs],
         outputs=dense_out)
 
-    def loss_fn(y_true, y_pred, pos_weight=10):
+    def loss_fn(y_true, y_pred, pos_weight=pos_weight):
         return tf.nn.weighted_cross_entropy_with_logits(
             targets=y_true,
             logits=y_pred,
             pos_weight=pos_weight,
             name=None)
     # model.summary()
-    model.compile(optimizer=Adam(lr=0.0001), loss=loss_fn)
+    model.compile(optimizer=Adam(lr=0.00001), loss=loss_fn)
     return model
 
 

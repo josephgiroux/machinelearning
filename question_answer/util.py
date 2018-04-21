@@ -5,5 +5,5 @@ def pickle_me(obj, filename):
         pickle.dump(obj, fh)
 
 def unpickle_me(filename):
-    with open(filename, 'r') as fh:
-        return pickle.load(fh.read())
+    with open(filename, 'rb') as fh:
+        return pickle.load(fh)

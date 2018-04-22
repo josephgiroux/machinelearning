@@ -167,7 +167,7 @@ def show_example(
             n_stars = int(score*10)
             n_blanks = 10 - n_stars
             bar = "*" * n_stars + "-" * n_blanks
-            print("( {answer} ) {word}: (guess) [{bar}] {score}".format(
+            print("( {answer} ({guess}) ) {word}: [{bar}] {score}".format(
                 answer="YES" if answer_vector[n] else "NO",
                 guess='yes' if score > 0.5 else 'no',
                 word=word, bar=bar, score=score))

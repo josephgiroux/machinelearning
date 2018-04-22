@@ -22,32 +22,39 @@ import question_answer.process_data as p
 
 # vectors = get_vector_information(df, word2vec)
 # save_vectors_and_df(vectors=vectors, df=df)
-word2vec, df, text_vectors, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
+# word2vec, df, text_vectors, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
 
-save_questions_and_text_vectors(question_vectors, text_vectors)
-
-model = combined_network()
+# save_questions_and_text_vectors(question_vectors, text_vectors)
 
 df, question_vectors, text_vectors = get_stanford_qa_and_vectors_pickled()
 
 gen = batch_generator(
         text_vectors=text_vectors,
         question_vectors=question_vectors,
-        batch_size=40)
+        batch_size=40, randomize=True)
 x = next(gen)
 
 
+
+model = combined_network(lr=0.01)
+
+
+(all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(question_vectors)
+
+train_question_x, train_y = all_train
+test_question_x, test_y = all_test
 
 
 model.fit_generator(
     generator=batch_generator(
         text_vectors=text_vectors,
-        question_vectors=question_vectors,
-        batch_size=40),
-    validation_data=valid_generator(
+        question_vectors=train_question_x,
+        batch_size=40, data_size=60000,
+        randomize=True),
+    validation_data=batch_generator(
         text_vectors=text_vectors,
-        question_vectors=question_vectors,
-        batch_size=40),
+        question_vectors=test_question_x,
+        batch_size=40, data_size=10000),
     steps_per_epoch=1500,
     validation_steps=250)
 

@@ -6,7 +6,7 @@ from util.text_util import get_word2vec_model
 from keras.models import Model, Input
 from keras.layers import Conv1D, Dense, GlobalMaxPooling1D, \
     GlobalAveragePooling1D, Dropout, Lambda, Concatenate, \
-    TimeDistributed, RepeatVector
+    TimeDistributed, BatchNormalization
 from keras.optimizers import Adam
 from keras.layers import LeakyReLU
 from keras import backend as K
@@ -39,6 +39,7 @@ def conv_reader_network(
             filters, kernel_size=(kernel_size,), padding='same',
             kernel_initializer='glorot_normal')(layer)
         conv = LeakyReLU()(conv)
+        conv = BatchNormalization()(conv)
 
     unpooled_out = conv
     if pooling is not None:
@@ -67,12 +68,15 @@ def dense_interpreter_network(
     for num_units in neuron_counts[1:]:
         layer = Dense(num_units)(layer)
         layer = Dropout(dropout)(layer)
+        layer = LeakyReLU()(layer)
+        layer = BatchNormalization()(layer)
 
     return layer
 
 
 
 def combined_network(
+        lr=0.00001,
         n_word_features=300,
         text_reader_layers=None,
         question_reader_layers=None,
@@ -85,7 +89,8 @@ def combined_network(
         (text_reader, text_inputs, text_outputs,)
     ) = get_readers(
         text_reader_layers=text_reader_layers,
-        question_reader_layers=question_reader_layers)
+        question_reader_layers=question_reader_layers,
+        question_pooling=question_pooling)
 
     dense_out = dense_interpreter_network(
         question_inputs=question_outputs,
@@ -102,7 +107,7 @@ def combined_network(
             pos_weight=pos_weight,
             name=None)
     # model.summary()
-    model.compile(optimizer=Adam(lr=0.00004), loss=loss_fn)
+    model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
     return model
 
 
@@ -146,7 +151,8 @@ def combined_network_one_reader(
 
 def get_readers(
         text_reader_layers=None,
-        question_reader_layers=None):
+        question_reader_layers=None,
+        question_pooling=GlobalAveragePooling1D,):
 
     question_reader_layers = question_reader_layers or [
         (2, 4),
@@ -164,7 +170,7 @@ def get_readers(
     ]
     question_reader, question_inputs, _, question_outputs = conv_reader_network(
         conv_specifications=question_reader_layers,
-        pooling=GlobalAveragePooling1D)
+        pooling=question_pooling)
     text_reader, text_inputs, text_outputs, _ = conv_reader_network(
         conv_specifications=text_reader_layers)
 

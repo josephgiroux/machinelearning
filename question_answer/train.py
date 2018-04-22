@@ -14,8 +14,76 @@ def load_qa_model():
 
 
 
+
+def get_train_test_valid_groups(vectors):
+    total = 87599
+    assert total == len(vectors)
+    train = 1
+    test = 2
+    valid = 3
+    final_valid = 4
+    assignments = []
+
+
+    train_text_x = []
+    train_question_x = []
+
+    train_y = []
+    test_text_x = []
+    test_question_x = []
+    test_y = []
+    valid_text_x = []
+    valid_question_x = []
+
+    valid_y = []
+
+    final_valid_text_x = []
+    final_valid_question_x = []
+    final_valid_y = []
+
+    def assign(idx):
+        if idx >= 80000:
+            return final_valid
+        else:
+            grp = idx % 8
+            if grp == 7:
+                return valid
+            if grp == 6:
+                return test
+            else:
+                return train
+
+    def add_dim(mat):
+        return mat.reshape([1] + list(mat.shape))
+
+    for n in range(total):
+        group = assign(n)
+        if group == train:
+            train_question_x.append(vectors[n])
+            train_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+        elif group == test:
+            test_question_x.append(vectors[n])
+            test_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+        elif group == valid:
+            valid_question_x.append(vectors[n])
+            valid_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+        elif group == final_valid:
+            final_valid_question_x.append(vectors[n])
+            final_valid_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
+
+    all_train = (train_question_x, train_y)
+    all_test = (test_question_x, test_y)
+    all_valid = (valid_question_x, valid_y)
+    all_final_valid = (final_valid_question_x, final_valid_y)
+    return (all_train, all_test, all_valid, all_final_valid)
+
+
+
+
 def pad_vectors(vectors, desired_len=None, n_features=300, answers=None):
     if desired_len is None:
+        if not vectors:
+            return vectors
         desired_len = max(vectors, key=lambda v: v.shape[0]).shape[0]
         # print("Desired len:", desired_len)
 
@@ -46,15 +114,21 @@ def pad_vectors(vectors, desired_len=None, n_features=300, answers=None):
     return vectors, answers
 
 
-def batch_generator(question_vectors, text_vectors, batch_size):
+def batch_generator(
+        question_vectors, text_vectors,
+        batch_size, randomize=False, data_size=60000):
 
+    if randomize:
+        random_options = list(range(0, data_size))
     while True:
-        for start in range(0, 60000, batch_size):
+        for start in range(0, data_size, batch_size):
             end = start + batch_size
             text_inputs = []
             question_inputs = []
             answer_vectors = []
             for row in question_vectors[start:end]:
+                if randomize:
+                    row = question_vectors[int(np.random.choice(random_options))]
                 text_inputs.append(text_vectors[row['c_id']])
                 question_inputs.append(row['question_matrix'])
                 answer_vectors.append(add_dim(row['answer_vector']))
@@ -68,31 +142,5 @@ def batch_generator(question_vectors, text_vectors, batch_size):
             yield (
                 [np.stack(text_inputs), np.stack(question_inputs)],
                 np.stack(answer_vectors))
-
-
-
-def valid_generator(question_vectors, text_vectors, batch_size):
-
-    while True:
-        for start in range(60000, 70000, batch_size):
-            end = start + batch_size
-            text_inputs = []
-            question_inputs = []
-            answer_vectors = []
-            for row in question_vectors[start:end]:
-                text_inputs.append(text_vectors[row['c_id']])
-                question_inputs.append(row['question_matrix'])
-                answer_vectors.append(add_dim(row['answer_vector']))
-
-
-            text_inputs, answer_vectors = pad_vectors(
-                text_inputs, answers=answer_vectors)
-            question_inputs, _ = pad_vectors(
-                question_inputs)
-
-            yield (
-                [np.stack(text_inputs), np.stack(question_inputs)],
-                np.stack(answer_vectors))
-
 
 

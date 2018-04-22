@@ -66,8 +66,8 @@ def save_vectors_and_df(question_vectors, text_vectors, df):
         question_vectors, text_vectors)
     pickle_me(df, DF_PICKLE)
 
-def save_model(model):
-    model.save(MODEL_PATH)
+def save_model(model, path=MODEL_PATH):
+    model.save(path)
 
 
 def get_stanford_qa_and_vectors_pickled():
@@ -480,74 +480,6 @@ def get_text_and_question_vectors(df, word2vec, n=10):
         "\nPositive should be weighted about {}.".format(
             total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
     return text_vectors, question_vectors
-
-
-
-def get_train_test_valid_groups(vectors):
-    total = 87599
-    assert total == len(vectors)
-    train = 1
-    test = 2
-    valid = 3
-    final_valid = 4
-    assignments = []
-
-
-    train_text_x = []
-    train_question_x = []
-
-    train_y = []
-    test_text_x = []
-    test_question_x = []
-    test_y = []
-    valid_text_x = []
-    valid_question_x = []
-
-    valid_y = []
-
-    final_valid_text_x = []
-    final_valid_question_x = []
-    final_valid_y = []
-
-    def assign(idx):
-        if idx >= 80000:
-            return final_valid
-        else:
-            grp = idx % 8
-            if grp == 7:
-                return valid
-            if grp == 6:
-                return test
-            else:
-                return train
-
-    def add_dim(mat):
-        return mat.reshape([1] + list(mat.shape))
-
-    for n in range(total):
-        group = assign(n)
-        if group == train:
-            train_text_x.append(add_dim(vectors[n]["text_matrix"]))
-            train_question_x.append(add_dim(vectors[n]["question_matrix"]))
-            train_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
-        elif group == test:
-            test_text_x.append(add_dim(vectors[n]["text_matrix"]))
-            test_question_x.append(add_dim(vectors[n]["question_matrix"]))
-            test_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
-        elif group == valid:
-            valid_text_x.append(add_dim(vectors[n]["text_matrix"]))
-            valid_question_x.append(add_dim(vectors[n]["question_matrix"]))
-            valid_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
-        elif group == final_valid:
-            final_valid_text_x.append(add_dim(vectors[n]["text_matrix"]))
-            final_valid_question_x.append(add_dim(vectors[n]["question_matrix"]))
-            final_valid_y.append(add_dim(add_dim(vectors[n]["answer_vector"])))
-
-    all_train = (train_text_x, train_question_x, train_y)
-    all_test = (test_text_x, test_question_x, test_y)
-    all_valid = (valid_text_x, valid_question_x, valid_y)
-    all_final_valid = (final_valid_text_x, final_valid_question_x, final_valid_y)
-    return (all_train, all_test, all_valid, all_final_valid)
 
 
 def consolidate_text_vectors(df, raw_vectors):

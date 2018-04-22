@@ -85,9 +85,6 @@ def pickle_vectors_in_batches(
         pickle_file = VECTOR_BATCH_PICKLE.format(n)
         pickle_me(batch, pickle_file)
 
-def pad_vectors(vector_batch):
-    longest_question_vector = 0
-    longest_text_vector = 0
 
 
 def split_with_dollarsign(text):
@@ -567,27 +564,15 @@ def remove_text_vectors(raw_vectors):
         row.pop('text_matrix', None)
     return raw_vectors
 
+#
+# def pad_text_vectors(text_vectors, n_features=300):
+#     longest_text = len(max(text_vectors.values(), key=len))
+#     text_vectors = {k: pad_vector_list(
+#         v, desired_len=longest_text, n_features=n_features
+#         ) for k,v in text_vectors.items()}
+#     return text_vectors
 
-def pad_text_vectors(text_vectors, n_features=300):
-    longest_text = len(max(text_vectors.values(), key=len))
-    text_vectors = {k: pad_vector_list(
-        v, desired_len=longest_text, n_features=n_features
-        ) for k,v in text_vectors.items()}
-    return text_vectors
 
-
-def pad_vector_list(vectors, desired_len, n_features=300):
-    diff = desired_len - len(vectors)
-    if diff < 0:
-        raise ValueError("Can't pad to a shorter length")
-
-    if diff:
-        post_pad = diff // 2
-        pre_pad = diff - post_pad
-        vectors = np.concatenate([np.zeros((1, n_features))] * pre_pad + [vectors] + (
-                [np.zeros((1, n_features))] * post_pad))
-
-    return vectors
 
 
 def pad_question_vectors(vectors, n_features=300):

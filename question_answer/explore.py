@@ -24,9 +24,19 @@ import question_answer.process_data as p
 # save_vectors_and_df(vectors=vectors, df=df)
 word2vec, df, text_vectors, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
 
+save_questions_and_text_vectors(question_vectors, text_vectors)
+
 model = combined_network()
 
 df, question_vectors, text_vectors = get_stanford_qa_and_vectors_pickled()
+
+gen = batch_generator(
+        text_vectors=text_vectors,
+        question_vectors=question_vectors,
+        batch_size=40)
+x = next(gen)
+
+
 
 
 model.fit_generator(

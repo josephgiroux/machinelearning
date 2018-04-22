@@ -30,6 +30,8 @@ suffix_replacements = {
 MODEL_PATH = "C:/Users/Joseph Giroux/Datasets/qa_model.h5"
 
 TEXT_VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_text_vector.pkl"
+
+TEXT_WORDS_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_text_words.pkl"
 QUESTION_VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_question_vector.pkl"
 
 VECTOR_BATCH_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector_{}.pkl"
@@ -43,22 +45,24 @@ def replace_digits(word):
     return new_str
 
 
-def save_questions_and_text_vectors(question_vectors, text_vectors):
+def save_questions_and_text_vectors(question_vectors, text_vectors, text_words):
     pickle_me(question_vectors, QUESTION_VECTOR_PICKLE)
     pickle_me(text_vectors, TEXT_VECTOR_PICKLE)
-
+    pickle_me(text_words, TEXT_WORDS_PICKLE)
 
 def load_questions_and_text_vectors():
     question_vectors = unpickle_me(QUESTION_VECTOR_PICKLE)
     text_vectors = unpickle_me(TEXT_VECTOR_PICKLE)
+    text_words = unpickle_me(TEXT_WORDS_PICKLE)
     return question_vectors, text_vectors
 
 
 def get_word2vec_and_stanford_qa_from_scratch():
     word2vec = get_word2vec_model()
     df = import_stanford_qa_data()
-    text_vectors, question_vectors = get_text_and_question_vectors(df, word2vec)
-    return word2vec, df, text_vectors, question_vectors
+    text_vectors, text_words, question_vectors = get_text_and_question_vectors(
+        df, word2vec)
+    return word2vec, df, text_vectors, text_words, question_vectors
 
 
 def save_vectors_and_df(question_vectors, text_vectors, df):
@@ -430,6 +434,7 @@ def one_question_test(df, word2vec, model):
 def get_text_and_question_vectors(df, word2vec, n=10):
     question_vectors = []
     text_vectors = dict()
+    text_words_dict = dict()
 
     df['text_matrix'] = None
     df['question_matrix'] = None
@@ -456,7 +461,7 @@ def get_text_and_question_vectors(df, word2vec, n=10):
         text_matrix, text_words, answer_vec, num_pos, num_neg = text_to_matrix_with_answer(
             text=context, answer=answer_text,
             answer_idx=answer_start, model=word2vec)
-
+        text_words_dict[c_id] = text_words
         # df.loc[idx, 'text_matrix'] = text_mat
         # df.loc[idx,'question_matrix'] = question_mat
         # df.loc[idx, 'answer_vector'] = answer_vec
@@ -479,7 +484,7 @@ def get_text_and_question_vectors(df, word2vec, n=10):
         "On average there were {} answer words and {} other words per row."
         "\nPositive should be weighted about {}.".format(
             total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
-    return text_vectors, question_vectors
+    return text_vectors, text_words, question_vectors
 
 
 def consolidate_text_vectors(df, raw_vectors):

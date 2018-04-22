@@ -144,3 +144,17 @@ def batch_generator(
                 np.stack(answer_vectors))
 
 
+def show_example(
+        model, df,
+        question_vectors,
+        answer_vectors,
+        text_vectors, idx=None):
+
+    if idx is None:
+        idx = np.random.randint(0, df.shape[0])
+
+
+    question, context, answer_start, answer_text, c_id = process_data.extract_fields(df, idx)
+    question_vector = question_vectors[idx]
+    answer_vector = answer_vectors[idx]
+    text_vectors = text_vectors[c_id]

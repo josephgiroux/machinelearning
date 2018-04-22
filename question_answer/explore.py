@@ -7,7 +7,7 @@ from importlib import reload
 from question_answer.process_data import *
 from question_answer.train import *
 import question_answer
-from question_answer.network import combined_network
+from question_answer.network import combined_network, combined_network_one_reader
 reload(question_answer.network)
 from question_answer.network import combined_network
 from question_answer.util import *
@@ -28,6 +28,12 @@ import question_answer.process_data as p
 
 df, question_vectors, text_vectors = get_stanford_qa_and_vectors_pickled()
 
+(all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(question_vectors)
+
+train_question_x, train_y = all_train
+test_question_x, test_y = all_test
+
+
 gen = batch_generator(
         text_vectors=text_vectors,
         question_vectors=question_vectors,
@@ -36,13 +42,9 @@ x = next(gen)
 
 
 
-model = combined_network(lr=0.01)
+model = combined_network_one_reader(lr=0.03)
 
 
-(all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(question_vectors)
-
-train_question_x, train_y = all_train
-test_question_x, test_y = all_test
 
 
 model.fit_generator(

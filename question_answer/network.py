@@ -116,13 +116,12 @@ def combined_network_one_reader(
         reader_layers=None,
         question_pooling=GlobalAveragePooling1D,
         pos_weight=30,
+        lr=0.0001,
         ):
 
 
-    reader, reader_inputs, reader_unpooled_output, reader_pooled_output = conv_reader_network(
-        conv_specifications=reader_layers,
-        pooling=GlobalAveragePooling1D)
-
+    question_inputs = Input((None, n_word_features), dtype='float32')
+    text_inputs = Input((None, n_word_features), dtype='float32')
     reader_layers = reader_layers or [
         (2, 16),
         (3, 32),
@@ -130,6 +129,35 @@ def combined_network_one_reader(
         (5, 128),
         (6, 256), # second pair of last element is number of output features per word
     ]
+
+    inputs = dict(question=question_inputs, text=text_inputs)
+    # track current output from each path so we can use/train same weights
+    # can't reinstantiate the layer constructor, start with inputs
+    outputs = dict(question=question_inputs, text=question_inputs)
+    # store combinations of convoluational layers and original feature inputs for subsequent layers
+    combined_inputs = dict(question=question_inputs, text=text_inputs)
+
+    for n, (kernel_size, filters) in enumerate(reader_layers):
+        if n:
+            concat = Concatenate()
+            for input_id in ['question', 'text']:
+                combined_inputs[input_id] = concat(
+                    [combined_inputs[input_id], outputs[input_id]])
+
+        conv = Conv1D(
+            filters, kernel_size=(kernel_size,), padding='same',
+            kernel_initializer='glorot_normal')
+        act = LeakyReLU()
+        norm = BatchNormalization()
+        for input_id in ['question', 'text']:
+            outputs[input_id] = conv(combined_inputs[input_id])
+            outputs[input_id] = act(outputs[input_id])
+            outputs[input_id] = norm(outputs[input_id])
+
+    text_outputs = outputs['text']
+    question_outputs = question_pooling()(outputs['question'])
+
+
     dense_out = dense_interpreter_network(
         question_inputs=question_outputs,
         text_inputs=text_outputs)
@@ -145,7 +173,7 @@ def combined_network_one_reader(
             pos_weight=pos_weight,
             name=None)
     # model.summary()
-    model.compile(optimizer=Adam(lr=0.00004), loss=loss_fn)
+    model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
     return model
 
 

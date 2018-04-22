@@ -1,7 +1,7 @@
 from question_answer.util import pickle_me, unpickle_me
 from question_answer import process_data
 from keras.models import load_model
-from question_answer.util import add_dim
+from question_answer.util import add_dim, sigmoid
 import numpy as np
 
 MODEL_PATH = "C:/Users/Joseph Giroux/Datasets/qa_model.h5"
@@ -147,14 +147,31 @@ def batch_generator(
 def show_example(
         model, df,
         question_vectors,
-        answer_vectors,
-        text_vectors, idx=None):
+        text_vectors,
+        text_words,
+        idx=None):
 
     if idx is None:
         idx = np.random.randint(0, df.shape[0])
 
-
+    print(question_vectors[idx]['question'])
+    print(question_vectors[idx]['answer'])
     question, context, answer_start, answer_text, c_id = process_data.extract_fields(df, idx)
-    question_vector = question_vectors[idx]
-    answer_vector = answer_vectors[idx]
-    text_vectors = text_vectors[c_id]
+    question_vector = question_vectors[idx]['question_matrix']
+    answer_vector = question_vectors[idx]['answer_vector']
+    text_vector = text_vectors[c_id]
+    pred = model.predict([add_dim(question_vector), add_dim(text_vector)])
+
+    def display_guess(matrix, words):
+        sums = np.sum(matrix, axis=0)
+        for n, word in enumerate(words):
+            score = sigmoid(sums[n])
+            n_stars = int(score*10)
+            n_blanks = 10 - n_stars
+            bar = "*" * n_stars + "-" * n_blanks
+            print("( {answer} ) {word}: (guess) [{bar}] {score}".format(
+                answer="YES" if answer_vector[n] else "NO",
+                guess='yes' if score > 0.5 else 'no',
+                word=word, bar=bar, score=score))
+
+    display_guess(pred, text_words[c_id])

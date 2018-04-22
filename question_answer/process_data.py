@@ -54,7 +54,7 @@ def load_questions_and_text_vectors():
     question_vectors = unpickle_me(QUESTION_VECTOR_PICKLE)
     text_vectors = unpickle_me(TEXT_VECTOR_PICKLE)
     text_words = unpickle_me(TEXT_WORDS_PICKLE)
-    return question_vectors, text_vectors
+    return question_vectors, text_vectors, text_words
 
 
 def get_word2vec_and_stanford_qa_from_scratch():
@@ -65,9 +65,9 @@ def get_word2vec_and_stanford_qa_from_scratch():
     return word2vec, df, text_vectors, text_words, question_vectors
 
 
-def save_vectors_and_df(question_vectors, text_vectors, df):
+def save_vectors_and_df(question_vectors, text_vectors, text_words, df):
     save_questions_and_text_vectors(
-        question_vectors, text_vectors)
+        question_vectors, text_vectors, text_words)
     pickle_me(df, DF_PICKLE)
 
 def save_model(model, path=MODEL_PATH):
@@ -76,8 +76,8 @@ def save_model(model, path=MODEL_PATH):
 
 def get_stanford_qa_and_vectors_pickled():
     df = unpickle_me(DF_PICKLE)
-    question_vectors, text_vectors = load_questions_and_text_vectors()
-    return df, question_vectors, text_vectors
+    question_vectors, text_vectors, text_words = load_questions_and_text_vectors()
+    return df, question_vectors, text_vectors, text_words
 
 def pickle_vectors_in_batches(
         vectors, batch_size=10000):
@@ -461,7 +461,9 @@ def get_text_and_question_vectors(df, word2vec, n=10):
         text_matrix, text_words, answer_vec, num_pos, num_neg = text_to_matrix_with_answer(
             text=context, answer=answer_text,
             answer_idx=answer_start, model=word2vec)
+
         text_words_dict[c_id] = text_words
+
         # df.loc[idx, 'text_matrix'] = text_mat
         # df.loc[idx,'question_matrix'] = question_mat
         # df.loc[idx, 'answer_vector'] = answer_vec
@@ -484,7 +486,7 @@ def get_text_and_question_vectors(df, word2vec, n=10):
         "On average there were {} answer words and {} other words per row."
         "\nPositive should be weighted about {}.".format(
             total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
-    return text_vectors, text_words, question_vectors
+    return text_vectors, text_words_dict, question_vectors
 
 
 def consolidate_text_vectors(df, raw_vectors):

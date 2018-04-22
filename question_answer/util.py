@@ -1,4 +1,5 @@
 import pickle
+import numpy as np
 
 def pickle_me(obj, filename):
     with open(filename, 'wb') as fh:
@@ -10,3 +11,7 @@ def unpickle_me(filename):
 
 def add_dim(mat):
     return mat.reshape([1]+list(mat.shape))
+
+def sigmoid(x):
+    return (1 / (1 + np.exp(-x)))
+

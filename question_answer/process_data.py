@@ -27,8 +27,10 @@ suffix_replacements = {
     'ourite': 'orite',
 }
 
-VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector.pkl"
 MODEL_PATH = "C:/Users/Joseph Giroux/Datasets/qa_model.h5"
+
+TEXT_VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_text_vector.pkl"
+QUESTION_VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_question_vector.pkl"
 
 VECTOR_BATCH_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector_{}.pkl"
 DF_PICKLE = "C:/Users/Joseph Giroux/Datasets/df.pkl"
@@ -41,16 +43,27 @@ def replace_digits(word):
     return new_str
 
 
+def save_questions_and_text_vectors(question_vectors, text_vectors):
+    pickle_me(question_vectors, QUESTION_VECTOR_PICKLE)
+    pickle_me(text_vectors, TEXT_VECTOR_PICKLE)
+
+
+def load_questions_and_text_vectors():
+    question_vectors = unpickle_me(QUESTION_VECTOR_PICKLE)
+    text_vectors = unpickle_me(TEXT_VECTOR_PICKLE)
+    return question_vectors, text_vectors
+
 
 def get_word2vec_and_stanford_qa_from_scratch():
     word2vec = get_word2vec_model()
     df = import_stanford_qa_data()
-    vectors = get_vector_information(df, word2vec)
-    return word2vec, df, vectors
+    text_vectors, question_vectors = get_text_and_question_vectors(df, word2vec)
+    return word2vec, df, text_vectors, question_vectors
 
 
-def save_vectors_and_df(vectors, df):
-    pickle_me(vectors, VECTOR_PICKLE)
+def save_vectors_and_df(question_vectors, text_vectors, df):
+    save_questions_and_text_vectors(
+        question_vectors, text_vectors)
     pickle_me(df, DF_PICKLE)
 
 def save_model(model):
@@ -59,8 +72,8 @@ def save_model(model):
 
 def get_stanford_qa_and_vectors_pickled():
     df = unpickle_me(DF_PICKLE)
-    vectors = unpickle_me(VECTOR_PICKLE)
-    return df, vectors
+    question_vectors, text_vectors = load_questions_and_text_vectors()
+    return df, question_vectors, text_vectors
 
 def pickle_vectors_in_batches(
         vectors, batch_size=10000):
@@ -160,10 +173,8 @@ def one_off_corrections(df):
 
 def extract_fields(df, idx):
     row = df.iloc[idx]
-    question, context, answer_start, answer_text = row.loc[[
-        'question', 'context', 'answer_start', 'text']]
-
-    return question, context, answer_start, answer_text
+    return row.loc[[
+        'question', 'context', 'answer_start', 'text', 'c_id']]
 
 
 def clean_for_w2v(word):
@@ -391,7 +402,7 @@ def example_map_matrix_to_text(matrix, words):
 
 
 def one_question_test(df, word2vec, model):
-    question, context, answer_start, answer_text = extract_fields(df, 1)
+    question, context, answer_start, answer_text, c_id = extract_fields(df, 1)
     # question_reader, text_reader = get_readers()
     question_mat, question_words = text_to_matrix(
         question, word2vec)
@@ -419,8 +430,9 @@ def one_question_test(df, word2vec, model):
 
 
 
-def get_vector_information(df, word2vec, n=10):
-    vectors = []
+def get_text_and_question_vectors(df, word2vec, n=10):
+    question_vectors = []
+    text_vectors = dict()
 
     df['text_matrix'] = None
     df['question_matrix'] = None
@@ -433,7 +445,7 @@ def get_vector_information(df, word2vec, n=10):
     #     print(idx)
     for idx in range(n_rows): #  range(n_rows):
         print(idx)
-        question, context, answer_start, answer_text = extract_fields(df, idx)
+        question, context, answer_start, answer_text, c_id = extract_fields(df, idx)
         print(question)
         print(answer_start)
         print(answer_text)
@@ -442,9 +454,9 @@ def get_vector_information(df, word2vec, n=10):
             answer_text = "0" + answer_text
             answer_start -= 1
 
-        question_mat, question_words = text_to_matrix(
+        question_matrix, question_words = text_to_matrix(
             text=question, model=word2vec)
-        text_mat, text_words, answer_vec, num_pos, num_neg = text_to_matrix_with_answer(
+        text_matrix, text_words, answer_vec, num_pos, num_neg = text_to_matrix_with_answer(
             text=context, answer=answer_text,
             answer_idx=answer_start, model=word2vec)
 
@@ -452,19 +464,17 @@ def get_vector_information(df, word2vec, n=10):
         # df.loc[idx,'question_matrix'] = question_mat
         # df.loc[idx, 'answer_vector'] = answer_vec
 
-        df.iloc[idx].at['text_matrix'] = text_mat
-        df.iloc[idx].at['question_matrix'] = question_mat
-        df.iloc[idx].at['answer_vector'] = answer_vec
 
         row = dict(
             idx=idx,
+            c_id=c_id,
             question=question,
             text=context,
             answer=answer_text,
-            text_matrix=text_mat,
-            question_matrix=question_mat,
+            question_matrix=question_matrix,
             answer_vector=answer_vec,)
-        vectors.append(row)
+        question_vectors.append(row)
+        text_vectors[c_id] = text_matrix
         total_pos += num_pos
         total_neg += num_neg
 
@@ -472,7 +482,7 @@ def get_vector_information(df, word2vec, n=10):
         "On average there were {} answer words and {} other words per row."
         "\nPositive should be weighted about {}.".format(
             total_pos / n_rows, total_neg / n_rows, total_neg / total_pos))
-    return vectors
+    return text_vectors, question_vectors
 
 
 
@@ -555,10 +565,11 @@ def consolidate_text_vectors(df, raw_vectors):
 def remove_text_vectors(raw_vectors):
     for row in raw_vectors:
         row.pop('text_matrix', None)
+    return raw_vectors
 
 
 def pad_text_vectors(text_vectors, n_features=300):
-    longest_text = len(max(text_vectors.items(), key=len))
+    longest_text = len(max(text_vectors.values(), key=len))
     text_vectors = {k: pad_vector_list(
         v, desired_len=longest_text, n_features=n_features
         ) for k,v in text_vectors.items()}
@@ -573,8 +584,8 @@ def pad_vector_list(vectors, desired_len, n_features=300):
     if diff:
         post_pad = diff // 2
         pre_pad = diff - post_pad
-        vectors = ([np.zeros(n_features, )] * pre_pad) + vectors + (
-                [np.zeros(n_features, )] * post_pad)
+        vectors = np.concatenate([np.zeros((1, n_features))] * pre_pad + [vectors] + (
+                [np.zeros((1, n_features))] * post_pad))
 
     return vectors
 
@@ -594,3 +605,8 @@ def pad_question_vectors(vectors, n_features=300):
 
     return vectors
 
+
+#
+# for n, row in enumerate(vectors):
+#     c_id = extract_fields(df, n)[-1]
+#     row['c_id'] = c_id

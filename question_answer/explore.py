@@ -5,6 +5,7 @@
 
 from importlib import reload
 from question_answer.process_data import *
+from question_answer.train import *
 import question_answer
 from question_answer.network import combined_network
 reload(question_answer.network)
@@ -21,19 +22,36 @@ import question_answer.process_data as p
 
 # vectors = get_vector_information(df, word2vec)
 # save_vectors_and_df(vectors=vectors, df=df)
-
+word2vec, df, text_vectors, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
 
 model = combined_network()
 
+df, question_vectors, text_vectors = get_stanford_qa_and_vectors_pickled()
 
 
-df, vectors = get_stanford_qa_and_vectors_pickled()
+model.fit_generator(
+    generator=batch_generator(
+        text_vectors=text_vectors,
+        question_vectors=question_vectors,
+        batch_size=40),
+    validation_data=valid_generator(
+        text_vectors=text_vectors,
+        question_vectors=question_vectors,
+        batch_size=40),
+    steps_per_epoch=1500,
+    validation_steps=250)
+
+
+
 
 (all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(vectors)
 
 train_text_x, train_question_x, train_y = all_train
 
+steps_per_epoch = 1500
 
+
+x = next(gen)
 
 print(np.repeat(train_text_x[1], 32, axis=0).shape)
 

@@ -118,8 +118,6 @@ def batch_generator(
         question_vectors, text_vectors,
         batch_size, randomize=False, data_size=60000):
 
-    if randomize:
-        random_options = list(range(0, data_size))
     while True:
         for start in range(0, data_size, batch_size):
             end = start + batch_size
@@ -128,7 +126,7 @@ def batch_generator(
             answer_vectors = []
             for row in question_vectors[start:end]:
                 if randomize:
-                    row = question_vectors[int(np.random.choice(random_options))]
+                    row = question_vectors[int(np.random.randint(data_size))]
                 text_inputs.append(text_vectors[row['c_id']])
                 question_inputs.append(row['question_matrix'])
                 answer_vectors.append(add_dim(row['answer_vector']))

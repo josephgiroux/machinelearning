@@ -34,7 +34,8 @@ train_question_x, train_y = all_train
 test_question_x, test_y = all_test
 
 
-model = combined_network_one_reader(lr=0.005)
+model = combined_network_one_reader(
+    lr=0.005, pos_weight=50)
 
 
 
@@ -43,13 +44,13 @@ show_example(
         question_vectors,
         text_vectors,
         text_words,
-        idx=1)
+        idx=4)
 
 model.fit_generator(
     generator=batch_generator(
         text_vectors=text_vectors,
         question_vectors=train_question_x,
-        batch_size=40, data_size=60000,
+        batch_size=40, data_size=40,
         randomize=True),
     validation_data=batch_generator(
         text_vectors=text_vectors,

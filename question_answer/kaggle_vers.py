@@ -1,6 +1,13 @@
-# This Python 3 environment comes with many helpful analytics libraries installed
-# It is defined by the kaggle/python docker image: https://github.com/kaggle/docker-python
-# For example, here's several helpful packages to load in
+"""
+
+This script has two main functions:
+
+    * Clean up the Stanford Question/Answer database, making numerous corrections to questions/answers/answer_indexes.
+
+    * Create vector representation and target values suitable for use in model training:
+        - Break down questions and contexts into words and build vector matrices of each.
+        - Create target flags for each word in the context, 1 if it is part of the answer and 0 otherwise.
+"""
 
 import numpy as np  # linear algebra
 import pandas as pd  # data processing, CSV file I/O (e.g. pd.read_csv)
@@ -11,20 +18,48 @@ import pickle
 import json
 import string
 import os
+from nltk.corpus import stopwords
+from collections import defaultdict
 
+
+stopwords = stopwords.words('english')
 
 # won't be able to load all of word2vec nor save the large amounts of data
 # on kaggle kernel, so set a demo mode that will return small zero vectors
-# for testing purposes.
+# for testing purposes.  set this to false and supply a valid
+# WORD2VEC_FILE to get actual vector representations.
+
+# if using different embeddings with a different number of features,
+# also modify the NUM_FEATURES constant below
+
 KAGGLE_DEMO = True
+NUM_FEATURES = 5 if KAGGLE_DEMO else 300
+
 
 # set these paths according to your system
 
-STANFORD_DATA_PATH = "D:/Datasets/stanford-question-answering-dataset/"
-WORD2VEC_PATH = '/path/to/word2vec/GoogleNews-vectors-negative300.bin'
-OUTPUT_DATA_PATH = "D:/Datasets/kaggle_out/"
+STANFORD_DATA_PATH = "../input"
+WORD2VEC_FILE = '/path/to/word2vec/GoogleNews-vectors-negative300.bin'
+OUTPUT_DATA_PATH = "."  # path to save results
+
 
 ##############################################################################
+
+
+# after running this complete import script, saved results can be returned using the
+# `get_stanford_qa_and_vectors_pickled()` function, or `load_questions_and_text_vectors()`
+# (excludes original dataframe)
+def main():
+    print("Getting all data from scratch.")
+    word2vec, df, text_vectors, text_words, question_data = get_word2vec_and_stanford_qa_from_scratch()
+    print("Saving results.")
+    save_vectors_and_df(question_data=question_data, text_vectors=text_vectors, text_words=text_words, df=df)
+    print("Saving successful.")
+    print("Loading results.")
+    df, question_vectors, text_vectors, text_words = get_stanford_qa_and_vectors_pickled()
+    print("Loading successful.")
+    return word2vec, df, text_vectors, text_words, question_data
+
 
 re.DEFAULT_VERSION = re.VERSION1
 replace_digits_rgx = re.compile(r"([0-9,]+[0-9]+)")
@@ -45,21 +80,11 @@ TEXT_VECTOR_PICKLE = os.path.join(OUTPUT_DATA_PATH, "qa_text_vector.pkl")
 TEXT_WORDS_PICKLE = os.path.join(OUTPUT_DATA_PATH, "qa_text_words.pkl")
 QUESTION_DATA_PICKLE = os.path.join(OUTPUT_DATA_PATH, "qa_data_vector.pkl")
 
+
+unknown_vectors = defaultdict(lambda: np.random.normal(size=(NUM_FEATURES,)))
+
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
-
-
-# Any results you write to the current directory are saved as output.
-def main():
-    print("Getting all data from scratch.")
-    word2vec, df, text_vectors, text_words, question_data = get_word2vec_and_stanford_qa_from_scratch()
-    print("Saving results.")
-    save_vectors_and_df(question_data=question_data, text_vectors=text_vectors, text_words=text_words, df=df)
-    print("Saving successful.")
-    print("Loading results.")
-    df, question_vectors, text_vectors, text_words = get_stanford_qa_and_vectors_pickled()
-    print("Loading successful.")
-    return word2vec, df, text_vectors, text_words, question_data
 
 
 def get_word2vec_and_stanford_qa_from_scratch():
@@ -108,7 +133,7 @@ def get_word2vec_and_stanford_qa_from_scratch():
     return word2vec, df, text_vectors, text_words, question_data
 
 
-def get_word2vec_model(filename=WORD2VEC_PATH):
+def get_word2vec_model(filename=WORD2VEC_FILE):
     # for purposes of running on kaggle kernel where
     # word2vec is not available, create a mock
     # instance that returns small zero vectors
@@ -123,7 +148,7 @@ def get_word2vec_model(filename=WORD2VEC_PATH):
                 pass
 
             def get_vector(self, *args, **kwargs):
-                return np.zeros((5,))
+                return np.zeros((NUM_FEATURES,))
 
         model = MockModel()
 
@@ -209,8 +234,12 @@ def import_stanford_qa_data():
 
 def one_off_corrections(df):
     """
-    some specific corrections -- plus some manual copy/paste issues make certain
+    some specific corrections, simplifications, etc -- plus some manual copy/paste issues make certain
     answers hard to parse
+
+    it looks like answer_start was determined by a blind search for first occurrence of the answer string.
+    possible there are systematic issues with this value throughout the dataset that weren't caught by
+    the answer validation used here
 
     TODO: possibly just save / reupload data with these corrections made
     """
@@ -220,9 +249,8 @@ def one_off_corrections(df):
             df.loc[idx, 'text'] = answer[2:]
             df.loc[idx, 'answer_start'] += 2
 
-
     for _ in range(0, 5):
-        df = df.drop(16818+_)
+        df = df.drop(16818 + _)
 
     df = df.reset_index(drop=True)
 
@@ -254,10 +282,10 @@ def one_off_corrections(df):
     df.loc[2478, 'text'] = 'three'
 
     df.loc[2491, 'answer_start'] = 60
-    df.loc[2491, 'text'] = "the media player included with the iPhone and iPad, a combination of the Music and Videos apps"
+    df.loc[
+        2491, 'text'] = "the media player included with the iPhone and iPad, a combination of the Music and Videos apps"
 
     df.loc[2501, 'answer_start'] = 396
-
 
     df.loc[3215, 'answer_start'] = 242
     df.loc[3218, 'answer_start'] = 242
@@ -267,8 +295,6 @@ def one_off_corrections(df):
     df.loc[3490, 'text'] = "a million"
     df.loc[3490, 'answer_start'] = 268
 
-
-
     df.loc[4051, 'text'] = "over 50"
     df.loc[4051, 'answer_start'] = 327
 
@@ -277,10 +303,8 @@ def one_off_corrections(df):
 
     df.loc[4182, 'answer_start'] = 618
 
-
     df.loc[5121, 'text'] = "15 km southwest of Dushanbe"
     df.loc[5121, 'answer_start'] = 499
-
 
     df.loc[5919, 'text'] = "seventh"
     df.loc[5919, 'answer_start'] = 983
@@ -288,14 +312,11 @@ def one_off_corrections(df):
     df.loc[5924, 'text'] = "seventh"
     df.loc[5924, 'answer_start'] = 983
 
-
     df.loc[5990, 'text'] = "three"
     df.loc[5990, 'answer_start'] = 925
 
-
     df.loc[5992, 'text'] = "three"
     df.loc[5992, 'answer_start'] = 925
-
 
     df.loc[6314, 'text'] = "six"
     df.loc[6314, 'answer_start'] = 292
@@ -339,19 +360,15 @@ def one_off_corrections(df):
     df.loc[8735, 'answer_start'] = 137
     df.loc[8735, 'text'] = "its synthesis of and reaction to the world around it"
 
-
     df.loc[8835, 'answer_start'] = 373
     df.loc[8835, 'text'] = "300 of which was paid by Cambridge University Press, 200 by the Royal Society of London, and 50 apiece by Whitehead and Russell themselves"
 
-
     df.loc[9745, 'answer_start'] = 621
-
 
     df.loc[10227, 'answer_start'] = 81
 
     df.loc[10354, 'answer_start'] = 326
     df.loc[10354, 'text'] = 'one regiment each of artillery, armour, and combat engineers'
-
 
     df.loc[11780, 'answer_start'] = 239
     df.loc[11780, 'text'] = '30'
@@ -362,15 +379,12 @@ def one_off_corrections(df):
     df.loc[12874, 'answer_start'] = 154
     df.loc[12874, 'text'] = 'five'
 
-
     df.loc[13060, 'answer_start'] = 272
 
     df.loc[13232, 'answer_start'] = 505
 
-
     df.loc[13787, 'answer_start'] = 362
     df.loc[13787, 'text'] = 'nine'
-
 
     df.loc[13791, 'answer_start'] = 189
     df.loc[13791, 'text'] = 'three'
@@ -387,10 +401,8 @@ def one_off_corrections(df):
     df.loc[14448, 'answer_start'] = 78
     df.loc[14448, 'text'] = 'three'
 
-
     df.loc[14473, 'answer_start'] = 259
     df.loc[14473, 'text'] = '⟨p⟩'
-
 
     df.loc[14516, 'answer_start'] = 341
 
@@ -399,8 +411,6 @@ def one_off_corrections(df):
 
     df.loc[14589, 'answer_start'] = 674
     df.loc[14589, 'text'] = "partial negative"
-
-
 
     df.loc[15159, 'answer_start'] = 108
 
@@ -412,7 +422,6 @@ def one_off_corrections(df):
     df.loc[15951, 'text'] = 'one'
     df.loc[15951, 'answer_start'] = 114
 
-
     df.loc[16124, 'answer_start'] = 85
 
     df.loc[16297, 'answer_start'] = 121
@@ -420,14 +429,12 @@ def one_off_corrections(df):
     df.loc[17106, 'answer_start'] = 200
     df.loc[17111, 'answer_start'] = 413
 
-
     df.loc[17168, 'text'] = 'eight'
     df.loc[17168, 'answer_start'] = 63
 
     df.loc[17280, 'answer_start'] = 151
 
     df.loc[18256, 'answer_start'] = 228
-
 
     df.loc[18369, 'answer_start'] = 370
     df.loc[18369, 'text'] = 'ser'
@@ -445,9 +452,7 @@ def one_off_corrections(df):
     df.loc[27972, 'question'] = 'How is the start value determined?'
 
     df.loc[28010, 'answer_start'] = 116
-
-    df.loc[28010, 'text'] ='external force which the gymnasts have to overcome with their muscle force and has an impact on the gymnasts linear and angular momentum'
-
+    df.loc[28010, 'text'] = 'external force which the gymnasts have to overcome with their muscle force and has an impact on the gymnasts linear and angular momentum'
 
     df.loc[34600, 'answer_start'] = 404
     df.loc[34600, 'text'] = 'Men did not show any sexual arousal to non-human visual stimuli'
@@ -455,16 +460,15 @@ def one_off_corrections(df):
     df.loc[36071, 'answer_start'] = 222
     df.loc[36071, 'text'] = 'the information must be changed'
 
-
     df.loc[39349, 'answer_start'] = 40
     df.loc[39349, 'text'] = 'a US$5 million grant for the International Justice Mission (IJM)'
 
     df.loc[45018, 'answer_start'] = 454
     df.loc[45018, 'text'] = 'because Florida had become "a derelict open to the occupancy of every enemy, civilized or savage, of the United States, and serving no other earthly purpose than as a post of annoyance to them.'
-    # df.loc[38536, 'answer_start'] = 491
-    # df.loc[38536, 'question'] = 'How long did the Rhodians hold out under siege by Demetrius Poliorcetes?'
-    # df.loc[38536, 'text'] = 'one year'
 
+    df.loc[38536, 'answer_start'] = 491
+    df.loc[38536, 'question'] = 'How long did the Rhodians hold out under siege by Demetrius Poliorcetes?'
+    df.loc[38536, 'text'] = 'one year'
 
     df.loc[45076, 'answer_start'] = 562
     df.loc[45076, 'text'] = 'the first post-Reconstruction Republican governor'
@@ -475,24 +479,18 @@ def one_off_corrections(df):
     df.loc[47651, 'answer_start'] = 208
     df.loc[47651, 'text'] = 'increasing numbers of airlines have began launching direct flights'
 
-
-
     df.loc[52335, 'answer_start'] = 147
     df.loc[52335, 'text'] = 'Mahmoud Massahi'
-
 
     df.loc[53520, 'answer_start'] = 197
     df.loc[53520, 'question'] = 'How many days after the Soviet Union issued their ultimatum did the Romanians meet their demands?'
     df.loc[53520, 'text'] = 'Two'
-
-
 
     df.loc[55205, 'answer_start'] = 48
     df.loc[55205, 'text'] = 'the rebuilt Wembley Stadium'
 
     df.loc[55752, 'answer_start'] = 370
     df.loc[55752, 'text'] = 'lower-elevation areas of the Piedmont'
-
 
     df.loc[56306, 'answer_start'] = 506
     df.loc[56306, 'text'] = 'the wings of flightless birds and the rudiments of pelvis and leg bones found in some snakes'
@@ -517,21 +515,18 @@ def one_off_corrections(df):
     df.loc[68312, 'question'] = 'What occurs with osmotic diarrhea?'
     df.loc[68312, 'text'] = 'too much water is drawn into the bowels'
 
-
     df.loc[70195, 'answer_start'] = 427
     df.loc[70195, 'questions'] = "What did the Native American tribes fail to accomplish in the later Pontiac's War?"
     df.loc[70195, 'text'] = 'returning them to their pre-war status'
 
-
     df.loc[70443, 'answer_start'] = 495
     df.loc[70443, 'text'] = 'somehow-belligerent'
-
 
     df.loc[71357, 'answer_start'] = 118
     df.loc[71357, 'text'] = 'science-fiction and adventure'
 
     df.loc[75502, 'text'] = '140 million'
-    df.loc[75502, 'answer_start'] =389
+    df.loc[75502, 'answer_start'] = 389
 
     df.loc[85016, 'answer_start'] = 387
 
@@ -542,10 +537,8 @@ def one_off_corrections(df):
     df.loc[85016, 'text'] = "this affected deficit values after 2001 (when Greece had already been admitted into the Eurozone)"
     df.loc[85016, 'answer_start'] = 363
 
-
     df.loc[87208, 'text'] = "typically discarded"
     df.loc[87208, 'answer_start'] = 216
-
 
     return df
 
@@ -668,15 +661,17 @@ def text_to_matrix_with_answer(text, answer, answer_idx, model):
                 word and curr_char_idx <= answer_idx < (curr_char_idx + (len(word) or 1))):
             # print((word, curr_char_idx, answer_idx))
             if answer_idx != curr_char_idx:
+                # the answer start may be slightly off because of punctuation and other things that
+                # are split off and counted separately
                 num_off = np.abs(answer_idx - curr_char_idx)
                 off_str = word[:num_off]
-                print("Watch out, was {} off because of {}".format(
-                    num_off, off_str))
-                print(text)
-                print(text_words)
-                print(answer_words)
-                print(answer)
-                if off_str not in ["US", "“", "‘", "-", "−", "⟨", " "] and off_str not in string.punctuation:
+                # print("Watch out, was {} off because of {}".format(
+                #     num_off, off_str))
+                # print(text)
+                # print(text_words)
+                # print(answer_words)
+                # print(answer)
+                if off_str not in ["US", "“", "‘", "-", "−", "⟨", " ", "[", "("] and off_str not in string.punctuation:
                     raise Exception
             in_answer = True
             # elif (curr_char_idx > answer_idx and curr_char_idx < answer_idx)

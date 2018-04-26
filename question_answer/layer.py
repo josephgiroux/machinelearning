@@ -1,8 +1,35 @@
 
 from keras.engine.topology import Layer
 import tensorflow as tf
-
+from question_answer.util import sigmoid, logit
 #
+
+class ScaleMaxSigmoid(Layer):
+
+    def __init__(self, scale_max_to=0.95, **kwargs):
+        self.scale_max_to = tf.constant(scale_max_to)
+        super(ScaleMaxSigmoid, self).__init__(**kwargs)
+
+    def logit(self, tensor):
+        return tf.log(tensor/(tf.constant(1.0)-tensor))
+
+    def call(self, inputs):
+        # return inputs
+        mx = tf.reduce_max(inputs)
+        ratio = self.scale_max_to / tf.sigmoid(mx)
+        # logit_bonus = self.logit(self.scale_max_to) - self.logit(tf.sigmoid(mx))
+
+        return tf.sigmoid(inputs) * ratio
+
+    #
+    # def call(self, inputs):
+    #     # return inputs
+    #     mx = tf.reduce_max(inputs)
+    #     logit_bonus = self.logit(self.scale_max_to) - self.logit(tf.sigmoid(mx))
+    #
+    #     return inputs + logit_bonus
+
+
 class ContextRepeat(Layer):
 
     def __init__(self, **kwargs):

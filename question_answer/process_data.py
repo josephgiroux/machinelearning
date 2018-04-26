@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import json
+import os
 import string
 from util.text_util import get_word2vec_model
 from warnings import warn
@@ -14,9 +15,9 @@ import unidecode
 from question_answer.util import pickle_me, unpickle_me
 
 re.DEFAULT_VERSION = re.VERSION1
-replace_digits_rgx = re.compile("([0-9,]+[0-9]+)")
-o_point_rgx = re.compile("[.][0-9]+[%]")
-splitter_rgx = re.compile("[— .'\"&/\-–()~]")
+replace_digits_rgx = re.compile(r"([0-9,]+[0-9]+)")
+o_point_rgx = re.compile(r"[.][0-9]+[%]")
+splitter_rgx = re.compile(r"[— .'\"&/\-–()~]")
 
 suffix_replacements = {
     'ised': 'ized',
@@ -28,46 +29,98 @@ suffix_replacements = {
 }
 
 MODEL_PATH = "C:/Users/Joseph Giroux/Datasets/qa_model.h5"
+STANFORD_DATA_PATH = "D:/Datasets/stanford-question-answering-dataset/"
 
-TEXT_VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_text_vector.pkl"
+OUTPUT_DATA_PATH ="C:/Users/Joseph Giroux/Datasets/"
+TEXT_VECTOR_PICKLE = os.path.join([OUTPUT_DATA_PATH, "qa_text_vector.pkl"])
+TEXT_WORDS_PICKLE = os.path.join([OUTPUT_DATA_PATH, "qa_text_words.pkl"])
+QUESTION_DATA_PICKLE = os.path.join([OUTPUT_DATA_PATH, "qa_data_vector.pkl"])
 
-TEXT_WORDS_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_text_words.pkl"
-QUESTION_VECTOR_PICKLE = "C:/Users/Joseph Giroux/Datasets/qa_question_vector.pkl"
 
 VECTOR_BATCH_PICKLE = "C:/Users/Joseph Giroux/Datasets/vector_{}.pkl"
 DF_PICKLE = "C:/Users/Joseph Giroux/Datasets/df.pkl"
 
-def replace_digits(word):
-    new_str = str(word)
-    matches = replace_digits_rgx.finditer(word)
-    for m in matches:
-        new_str = new_str[:m.start(0)] + "#" * len(m[0]) + new_str[m.end(0):]
-    return new_str
+
+def get_word2vec_and_stanford_qa_from_scratch():
+    """
+    Master loading and processing function.
+    :return:
+        word2vec -- Gensim word2vec model
+        df -- Original dataframe as processed in Bharath's kernel here:
+            https://www.kaggle.com/bharathsh/stanford-q-a-json-to-clean-dataframe
+            -- with a few additional data post-processing corrections
+        text_vectors -- dictionary where key is a context id, value is a matrix of
+            word2vec embeddings corresponding to that text passage
+        text_words -- dictionary where key is a context id, value is a list of strings.
+            each string is a word corresponding to a row in the vector matrix, and
+            that row contains the vector for that word in that position in the passage
+            meant for aligning model guesses with actual target labels for qualitative
+            examination of results
+        question_data -- a row of dictionaries
+            (can be easily converted to dataframe with
+                `pd.DataFrame.from_records(question_data)` )
+
+            Each dictionary contains the following keys:
+
+            idx: corresponding row index in Stanford dataframe.
+                (This should also equal the index of this row in the list of rows returned)
+            c_id: context_id corresponding to the text passage this question is based on.
+                can be used to look up the corresponding vectorizations and wordlists in
+                text_vectors and text_words.
+
+            question: original unprocessed text of the question
+
+            text: original, unprocessed text of the context passage,
+            answer: original, unprocessed text of the answer
+
+            question_matrix: vectorization of the question, one row for each word for which
+                a vector representation was found
+            answer_vector: an array of target flags corresponding to each word in the context
+                passage wordlist and each vector in the text matrix: 1 if the corresponding
+                word is part of the answer, 0 otherwise
 
 
-def save_questions_and_text_vectors(question_vectors, text_vectors, text_words):
-    pickle_me(question_vectors, QUESTION_VECTOR_PICKLE)
+
+    """
+    word2vec = get_word2vec_model()
+    df = import_stanford_qa_data()
+    text_vectors, text_words, question_data = get_text_and_question_vectors(
+        df, word2vec)
+    return word2vec, df, text_vectors, text_words, question_data
+
+def save_questions_and_text_vectors(question_data, text_vectors, text_words):
+    """
+    just a simple function to pickle the final results for later use --
+    possibly replace this with a better / safer storage protocol than pickle later
+    """
+    pickle_me(question_data, QUESTION_DATA_PICKLE)
     pickle_me(text_vectors, TEXT_VECTOR_PICKLE)
     pickle_me(text_words, TEXT_WORDS_PICKLE)
 
 def load_questions_and_text_vectors():
-    question_vectors = unpickle_me(QUESTION_VECTOR_PICKLE)
+    """
+    restore pre-processed question data, text vectorization,
+    and wordlists from disk
+    """
+    question_data = unpickle_me(QUESTION_DATA_PICKLE)
     text_vectors = unpickle_me(TEXT_VECTOR_PICKLE)
     text_words = unpickle_me(TEXT_WORDS_PICKLE)
-    return question_vectors, text_vectors, text_words
+    return question_data, text_vectors, text_words
 
 
-def get_word2vec_and_stanford_qa_from_scratch():
-    word2vec = get_word2vec_model()
-    df = import_stanford_qa_data()
-    text_vectors, text_words, question_vectors = get_text_and_question_vectors(
-        df, word2vec)
-    return word2vec, df, text_vectors, text_words, question_vectors
 
 
-def save_vectors_and_df(question_vectors, text_vectors, text_words, df):
+
+def save_vectors_and_df(question_data, text_vectors, text_words, df):
+    """
+    save the original dataframe along with the processed question data
+    and vectorizations -- this hands off the data processed by this script
+    to another function.  This is because the original dataframe may not
+    even be needed anymore, so those functions can be used on their own.
+
+    """
     save_questions_and_text_vectors(
-        question_vectors, text_vectors, text_words)
+        question_data, text_vectors, text_words)
     pickle_me(df, DF_PICKLE)
 
 def save_model(model, path=MODEL_PATH):
@@ -75,6 +128,12 @@ def save_model(model, path=MODEL_PATH):
 
 
 def get_stanford_qa_and_vectors_pickled():
+    """
+    load saved question data and vector representations.  since original dataframe
+    may not be needed anymore, optionally just call `load_questions_and_text_vectors()`
+    directly
+
+    """
     df = unpickle_me(DF_PICKLE)
     question_vectors, text_vectors, text_words = load_questions_and_text_vectors()
     return df, question_vectors, text_vectors, text_words
@@ -122,8 +181,7 @@ def import_stanford_qa_data():
     # thanks to Bharath, https://www.kaggle.com/bharathsh/stanford-q-a-json-to-clean-dataframe,
     # for code adapted for this use
     #
-    data_path = "D:/Datasets/stanford-question-answering-dataset/"
-    train_path = data_path + 'train-v1.1.json'
+    train_path = os.path.join([STANFORD_DATA_PATH, 'train-v1.1.json'])
     path = ['data', 'paragraphs', 'qas', 'answers']
     with open(train_path) as fh:
         raw_json = json.loads(fh.read())
@@ -133,7 +191,7 @@ def import_stanford_qa_data():
     r = pd.io.json.json_normalize(raw_json, path[:-2])
 
     idx = np.repeat(r['context'].values, r.qas.str.len())
-    ndx = np.repeat(m['id'].values,m['answers'].str.len())
+    ndx = np.repeat(m['id'].values, m['answers'].str.len())
     m['context'] = idx
     js['q_idx'] = ndx
 
@@ -148,6 +206,12 @@ def import_stanford_qa_data():
 
 
 def one_off_corrections(df):
+    """
+    some specific corrections -- plus some manual copy/paste issues make certain
+    answers hard to parse
+
+    TODO: possibly just save / reupload data with these corrections made
+    """
     for idx in range(df.shape[0]):
         answer = df.loc[idx, 'text']
         if answer.startswith(". "):
@@ -160,14 +224,7 @@ def one_off_corrections(df):
     df.loc[85016, 'answer_start'] = 387
 
     df.loc[85016, 'text'] = '38%'
-    # df.loc[36157, 'answer_start'] = 179
-    # df.loc[36157, 'text'] = '6-months'
-    #
-    # df.loc[36212, 'answer_start'] = 132
-    # df.loc[36212, 'text'] = 'as white or "other."'
-    #
-    # df.loc[36257, 'answer_start'] = 371
-    # df.loc[36257, 'text'] = 'Diverse immigration'
+
     return df
 
 
@@ -179,30 +236,57 @@ def extract_fields(df, idx):
 
 
 def clean_for_w2v(word):
+    """
+    Do some basic universal cleaning to make the word findable in word2vec.
+    Most punctuation needs to be purged, numerals need to be handled, but
+    some meaningful punctuation such as currency symbols needs to be preserved.
+
+    so far haven't been able to perfectly emulate google's handling of certain compound
+    terms: tennis-player -> tennis_player and other similar, so they are mostly handled
+    by pre-splitting and separate vector representations.
+    """
     rtn = ""
     word = replace_digits(word)
     for ch in word:
         if ch.isalnum():
             rtn += ch
         elif ch in '$£¥€#':
+            # keep numeral symbol # and currency symbols as vectors exist
             rtn += ch
         elif ch in string.punctuation:
-            # Possibly save/split out meaningful punctuation, like $ --
-            # a little too much trouble now
-            # print(ch)
-            # rtn += '_'
             pass
 
-    return rtn.strip('_')
+    return rtn
+
+
+def replace_digits(word):
+    """
+    google word2vec seems to have handled digits like so:
+    single digits are preserved as-is: 1,2,3 etc. have their own
+    vectors represented.  Two or more digits are masked as '#' for
+    each digit, and strings of '##' of varying lengths have vector
+    representations.  Convert the incoming strings to this representation
+    to look up the appropriate vectorization.
+    """
+    new_str = str(word)
+    matches = replace_digits_rgx.finditer(word)
+    for m in matches:
+        new_str = new_str[:m.start(0)] + "#" * len(m[0]) + new_str[m.end(0):]
+    return new_str
 
 
 def sep_digits(word):
+    """
+    occasionally after swapping out numerals for '#', we may end up with a word that
+    is mixed letters and ##s.  break out the alphabetic part and the numeric part and
+    return the pieces in the order we foudn them
+    """
     first = ""
     second = ""
     dig_first = None
     for n, ch in enumerate(word):
         if not n:
-            dig_first = ch=='#'
+            dig_first = ch == '#'
 
         if ch == '#':
             if dig_first:
@@ -218,8 +302,31 @@ def sep_digits(word):
     return first, second
 
 def get_vec(word, model, possible_next=None):
+    """
+    elaborate function to find best vector(s) for a given word in google word2vec,
+    accounting for case sensitivity inconsistency, some english/GB spelling differences,
+    parsing issues, unicode issues, etc.
+
+    hacky but works, would be really nice to refactor entire text processing chain
+
+    possible TODO: implement parsing of a 'possible next word'
+        (e.g. model tries 'Taj_Mahal' before just returning vector for 'Taj')
+
+    returns a list of vectors in order
+        a list of strings in order (to calculate the distance moved along the text)
+        an additional character offset (to account for characters lost in splitting
+            and other parsing operations to allow the text processor to keept track
+            of where the answer is) --
+
+    """
     if not word:
         return [None], [None], 1
+
+    # hack here -- since $ and other currency symbols have
+    # to be split by themselves in order to keep the character counter
+    # from advancing an extra character every time a $
+    # is seen, it has to return 0 for the spacing increment
+    # in that case.
     if word in ['US$', 'CAD$', 'C$', 'NZ$', 'NT$', 'A$', 'S$', 'R$']:
         return [model.get_vector('$')], [word], 0
     elif word == 'CN¥':
@@ -274,19 +381,18 @@ def get_vec(word, model, possible_next=None):
         # disable this look-ahead for now, a little more complexity than is needed
         possible_combined = _get_vec("_".join([word, possible_next]))
         if possible_combined is not None:
-            return possible_combined, 2
+            return possible_combined, [possible_combined], 2
     else:
-        # hack here -- since $ has to be split by
-        # itself, in order to keep the character counter
-        # from advancing an extra character every time a $
-        # is seen, it has to return 0 in that case.
         return _get_vec(word)
 
 
 def text_to_matrix(text, model):
+    """
+    general purpose vectorize a text -- used for the
+    question part mostly, as the context vectorization is
+    more complex and needs to keep track of answer
+    """
     words = split_with_dollarsign(text)
-
-
     vectors = []
     remaining_words = []
     idx, end = 0, len(words)
@@ -315,6 +421,19 @@ def text_to_matrix(text, model):
 
 
 def text_to_matrix_with_answer(text, answer, answer_idx, model):
+    """
+    split out a text and find vectors for each lexical item
+    also keeps track of target Y values for each lexical item
+    in the text: 0 if the word is not part of the answer, 1 if it is
+
+    There is a lot of redundancy here since every time the text is
+    reused for a different question, the vectorization is repeated
+    since the answer positioning is intertwined with the vector
+    search.  Lots of potential to improve, but since it runs in
+    a couple minutes on my machine and I can save results, will wait
+    for a complete overhaul in possible future versions
+
+    """
     # first remove punctuation
     words = split_with_dollarsign(text)
     # clean_words = map(clea_rn_for_w2v, words)\
@@ -446,11 +565,8 @@ def get_text_and_question_vectors(df, word2vec, n=10):
     # for idx in range(n_rows):
     #     print(idx)
     for idx in range(n_rows): #  range(n_rows):
-        print(idx)
+        print("{}/{}".format(idx, n_rows))
         question, context, answer_start, answer_text, c_id = extract_fields(df, idx)
-        print(question)
-        print(answer_start)
-        print(answer_text)
         # especially annoying special cases
         if answer_text != '.50-inch' and o_point_rgx.match(answer_text):
             answer_text = "0" + answer_text
@@ -490,6 +606,13 @@ def get_text_and_question_vectors(df, word2vec, n=10):
 
 
 def consolidate_text_vectors(df, raw_vectors):
+    """
+    Was willing to tolerate some runtime redundancy in re-vectorizing repeated text passages,
+    but not willing to tolerate that redundancy in the final data file, which would be roughly
+    quadruple in size.
+
+    Convert contexts to a dictionary where C_id is the key, and the text matrix is the value.
+    """
     text_vectors = dict()
     for idx, row in enumerate(raw_vectors):
         c_id = df.iloc[idx].loc['c_id']

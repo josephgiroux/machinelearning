@@ -1,13 +1,14 @@
 from gensim.models.word2vec import Word2Vec
 from gensim.models import KeyedVectors
 
+WORD2VEC_PATH = 'C:/Users/Joseph Giroux/Datasets/GoogleNews-vectors-negative300.bin'
 
-def get_word2vec_model(filename='C:/Users/Joseph Giroux/Datasets/GoogleNews-vectors-negative300.bin'):
+def get_word2vec_model(filename=WORD2VEC_PATH):
     model = KeyedVectors.load_word2vec_format(
         filename, binary=True)
     return model
 
-model = get_word2vec_model()
+w2v = get_word2vec_model()
 model.most_similar_cosmul(positive=['Baghdad', 'England'], negative=['London'])
 
 model.most_similar(positive=['Baghdad', 'England'], negative=['London'])

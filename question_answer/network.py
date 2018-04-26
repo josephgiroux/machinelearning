@@ -13,7 +13,7 @@ from keras import backend as K
 from keras.engine.topology import Layer
 import tensorflow as tf
 from warnings import warn
-from question_answer.layer import ContextRepeat
+from question_answer.layer import ContextRepeat, ScaleMaxSigmoid
 
 
 def conv_reader_network(
@@ -57,10 +57,7 @@ def conv_reader_network(
 def dense_interpreter_network(
         question_inputs,
         text_inputs,
-        n_question_features=64,
-        n_text_features=256,
-        dropout=0.5,
-        lr=0.0001):
+        dropout=0.5,):
 
     neuron_counts = [1024, 256, 64, 16, 1]
     layer = ContextRepeat()([text_inputs, question_inputs])
@@ -92,13 +89,14 @@ def combined_network(
         question_reader_layers=question_reader_layers,
         question_pooling=question_pooling)
 
-    dense_out = dense_interpreter_network(
+    final_out = dense_interpreter_network(
         question_inputs=question_outputs,
         text_inputs=text_outputs)
 
+    # final_out = ScaleMaxSigmoid(3.0)(final_out)
     model = Model(
         inputs=[question_inputs, text_inputs],
-        outputs=dense_out)
+        outputs=final_out)
 
     def loss_fn(y_true, y_pred, pos_weight=pos_weight):
         return tf.nn.weighted_cross_entropy_with_logits(
@@ -158,13 +156,14 @@ def combined_network_one_reader(
     question_outputs = question_pooling()(outputs['question'])
 
 
-    dense_out = dense_interpreter_network(
+    final_out = dense_interpreter_network(
         question_inputs=question_outputs,
         text_inputs=text_outputs)
 
+    # final_out = ScaleMaxSigmoid(3.0)(final_out)
     model = Model(
         inputs=[question_inputs, text_inputs],
-        outputs=dense_out)
+        outputs=final_out)
 
     def loss_fn(y_true, y_pred, pos_weight=pos_weight):
 

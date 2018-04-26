@@ -22,7 +22,7 @@ import question_answer.process_data as p
 
 # vectors = get_vector_information(df, word2vec)
 # save_vectors_and_df(vectors=vectors, df=df)
-word2vec, df, text_vectors, text_words, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
+# word2vec, df, text_vectors, text_words, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
 
 # save_questions_and_text_vectors(question_vectors, text_vectors, text_words)
 
@@ -35,7 +35,7 @@ test_question_x, test_y = all_test
 
 
 model = combined_network_one_reader(
-    lr=0.2, pos_weight=50)
+    lr=0.05, pos_weight=35)
 
 
 
@@ -44,14 +44,20 @@ show_example(
         question_vectors,
         text_vectors,
         text_words,
-        idx=0)
+        idx=2)
+
+
+
+
+
+
 
 model.fit_generator(
     generator=batch_generator(
         text_vectors=text_vectors,
         question_vectors=train_question_x,
         batch_size=40, data_size=40,
-        randomize=True),
+        randomize=True, always=1),
     validation_data=batch_generator(
         text_vectors=text_vectors,
         question_vectors=test_question_x,

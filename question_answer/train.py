@@ -116,7 +116,8 @@ def pad_vectors(vectors, desired_len=None, n_features=300, answers=None):
 
 def batch_generator(
         question_vectors, text_vectors,
-        batch_size, randomize=False, data_size=60000):
+        batch_size, randomize=False,
+        data_size=60000, always=None):
 
     while True:
         for start in range(0, data_size, batch_size):
@@ -125,7 +126,9 @@ def batch_generator(
             question_inputs = []
             answer_vectors = []
             for row in question_vectors[start:end]:
-                if randomize:
+                if always:
+                    row = question_vectors[always]
+                elif randomize:
                     row = question_vectors[int(np.random.randint(data_size))]
                 text_inputs.append(text_vectors[row['c_id']])
                 question_inputs.append(row['question_matrix'])
@@ -164,9 +167,12 @@ def show_example(
         sums = np.sum(matrix, axis=0)
         for n, word in enumerate(words):
             score = sigmoid(sums[n])
-            n_stars = int(score*10)
-            n_blanks = 10 - n_stars
-            bar = "*" * n_stars + "-" * n_blanks
+            try:
+                n_stars = int(score*10)
+                n_blanks = 10 - n_stars
+                bar = "*" * n_stars + "-" * n_blanks
+            except ValueError:
+                bar = "NaN"
             print("( {answer} ({guess}) ) {word}: [{bar}] {score}".format(
                 answer="YES" if answer_vector[n] else "NO",
                 guess='yes' if score > 0.5 else 'no',

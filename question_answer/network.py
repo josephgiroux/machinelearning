@@ -168,7 +168,7 @@ def combined_network_one_reader(
     def loss_fn(y_true, y_pred, pos_weight=pos_weight):
 
         return tf.nn.weighted_cross_entropy_with_logits(
-            targets=y_true*1.5,
+            targets=y_true*1.1,
             logits=y_pred,
             pos_weight=pos_weight,
             name=None)

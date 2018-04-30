@@ -16,7 +16,7 @@ def load_qa_model():
 
 
 def get_train_test_valid_groups(vectors):
-    total = 87599
+    total = 87587
     assert total == len(vectors)
     train = 1
     test = 2

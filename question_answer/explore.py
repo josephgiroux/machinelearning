@@ -22,20 +22,21 @@ import question_answer.process_data as p
 
 # vectors = get_vector_information(df, word2vec)
 # save_vectors_and_df(vectors=vectors, df=df)
-# word2vec, df, text_vectors, text_words, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
+word2vec, df, text_vectors, text_words, question_vectors = get_word2vec_and_stanford_qa_from_scratch()
 
-# save_questions_and_text_vectors(question_vectors, text_vectors, text_words)
+save_questions_and_text_vectors(question_vectors, text_vectors, text_words)
 
-df, question_vectors, text_vectors, text_words = get_stanford_qa_and_vectors_pickled()
+df, question_data, text_vectors, text_words = get_stanford_qa_and_vectors_pickled()
 
-(all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(question_vectors)
+
+(all_train, all_test, all_valid, all_final_valid) = get_train_test_valid_groups(question_data)
 
 train_question_x, train_y = all_train
 test_question_x, test_y = all_test
 
 
 model = combined_network_one_reader(
-    lr=0.05, pos_weight=35)
+    lr=0.001, pos_weight=35)
 
 
 

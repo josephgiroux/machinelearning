@@ -43,26 +43,29 @@ show_example(
         question_data,
         text_vectors,
         text_words,
-        idx=20)
+        idx=1)
 
 
 
 
-
-
+#
+# for layer in model.layers:
+#     weights = layer.get_weights()
+#     for w in weights:
+#         print(w)
 
 model.fit_generator(
     generator=batch_generator(
         text_vectors=text_vectors,
         question_vectors=train_question_x,
-        batch_size=40, data_size=40,
+        batch_size=40, data_size=2,
         randomize=True),
     validation_data=batch_generator(
         text_vectors=text_vectors,
         question_vectors=test_question_x,
         batch_size=40, data_size=10000),
-    steps_per_epoch=1500,
-    validation_steps=250)
+    steps_per_epoch=50,
+    validation_steps=25)
 
 
 

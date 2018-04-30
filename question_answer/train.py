@@ -105,13 +105,35 @@ def pad_vectors(vectors, desired_len=None, n_features=300, answers=None):
 
             assert new_matrix.shape[0] == desired_len
 
+
             if answers is not None:
+                # print(answers[n].shape)
                 answers[n] = np.concatenate((
-                    np.zeros((1, pre_pad)),
+                    np.zeros((pre_pad, 2)),
                     answers[n],
-                    np.zeros((1, post_pad))), axis=-1)
+                    np.zeros((post_pad, 2))))
+                # print(answers[n].shape)
+                # answers[n] += pre_pad
+                # sparse encoding, more trouble than its worth
+                assert answers[n].shape[0] == desired_len
 
     return vectors, answers
+
+
+
+def answer_start_end(answer_vector):
+    answer_span = np.nonzero(answer_vector)
+
+    answer_start = np.zeros(shape=answer_vector.shape)
+    answer_start[np.min(answer_span)] = 1
+
+    answer_end = np.zeros(shape=answer_vector.shape)
+    answer_end[np.max(answer_span)] = 1
+    # print(answer_start)
+    # print(answer_start.shape)
+    # print(answer_end)
+    return answer_start, answer_end
+
 
 
 def batch_generator(
@@ -132,17 +154,26 @@ def batch_generator(
                     row = question_vectors[int(np.random.randint(data_size))]
                 text_inputs.append(text_vectors[row['c_id']])
                 question_inputs.append(row['question_matrix'])
-                answer_vectors.append(add_dim(row['answer_vector']))
+                ans = np.stack(answer_start_end(row['answer_vector']), axis=-1)
+                answer_vectors.append(ans)
 
 
             text_inputs, answer_vectors = pad_vectors(
                 text_inputs, answers=answer_vectors)
+            # print('ITS ALWAYS THE WRONG SHAPE')
+            # print(answer_vectors.shape)
             question_inputs, _ = pad_vectors(
                 question_inputs)
-
-            yield (
-                [np.stack(text_inputs), np.stack(question_inputs)],
+            # print(answer_vectors[0].shape)
+            # print(np.stack(answer_vectors).shape)
+            #
+            # print(np.stack(answer_vectors).shape)
+            rtn = (
+                [np.stack(text_inputs),
+                 np.stack(question_inputs)],
                 np.stack(answer_vectors))
+
+            yield rtn
 
 
 def show_example(
@@ -160,22 +191,31 @@ def show_example(
     question, context, answer_start, answer_text, c_id = process_data.extract_fields(df, idx)
     question_vector = question_vectors[idx]['question_matrix']
     answer_vector = question_vectors[idx]['answer_vector']
+    # answer_start, answer_end = answer_start_end(question_vectors[idx]['answer_vector'])
+
     text_vector = text_vectors[c_id]
-    pred = model.predict([add_dim(question_vector), add_dim(text_vector)])
+    pred = model.predict([add_dim(text_vector), add_dim(question_vector)])
 
     def display_guess(matrix, words):
+        # print("LOGITS SHAPE")
+        # print(matrix.shape)
+
         sums = np.sum(matrix, axis=0)
+        start_end = np.argmax(matrix, axis=1)
+        guess_start_idx = start_end[0][0]
+        guess_end_idx = start_end[0][1]
+
         for n, word in enumerate(words):
-            score = sigmoid(sums[n])
+
             try:
-                n_stars = int(score*10)
-                n_blanks = 10 - n_stars
-                bar = "*" * n_stars + "-" * n_blanks
+                pass
             except ValueError:
                 bar = "NaN"
-            print("( {answer} ({guess}) ) {word}: [{bar}] {score}".format(
+            print("( {answer} ({guess}) ) {word}: [{start_score} -> {end_score}]".format(
                 answer="YES" if answer_vector[n] else "NO",
-                guess='yes' if score > 0.5 else 'no',
-                word=word, bar=bar, score=score))
+                guess={guess_start_idx: 'start', guess_end_idx: 'end'}[n] if n in (
+                    guess_start_idx, guess_end_idx) else '--',
+                word=word, start_score=matrix[0][n][0],
+                end_score=matrix[0][n][1],))
 
     display_guess(pred, text_words[c_id])

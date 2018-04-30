@@ -59,7 +59,7 @@ def dense_interpreter_network(
         text_inputs,
         dropout=0.5,):
 
-    neuron_counts = [1024, 256, 64, 16, 1]
+    neuron_counts = [1024, 256, 64, 16, 2]
     layer = ContextRepeat()([text_inputs, question_inputs])
     layer = TimeDistributed(Dense(neuron_counts[0]))(layer)
     for num_units in neuron_counts[1:]:
@@ -72,7 +72,7 @@ def dense_interpreter_network(
 
 
 
-def combined_network(
+def combined_network_two_readers(
         lr=0.00001,
         n_word_features=300,
         text_reader_layers=None,
@@ -104,6 +104,12 @@ def combined_network(
             logits=y_pred,
             pos_weight=pos_weight,
             name=None)
+
+    def loss_fn(y_true, y_pred):
+        return tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=y_true,
+            logits=y_pred,
+            name=None)
     # model.summary()
     model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
     return model
@@ -112,7 +118,7 @@ def combined_network(
 def combined_network_one_reader(
         n_word_features=300,
         reader_layers=None,
-        question_pooling=GlobalAveragePooling1D,
+        question_pooling=GlobalMaxPooling1D,
         pos_weight=30,
         lr=0.0001,
         ):
@@ -162,20 +168,32 @@ def combined_network_one_reader(
 
     # final_out = ScaleMaxSigmoid(3.0)(final_out)
     model = Model(
-        inputs=[question_inputs, text_inputs],
+        inputs=[text_inputs, question_inputs],
         outputs=final_out)
 
-    def loss_fn(y_true, y_pred, pos_weight=pos_weight):
+    # def loss_fn(y_true, y_pred, pos_weight=pos_weight):
+    #
+    #     return tf.nn.weighted_cross_entropy_with_logits(
+    #         targets=y_true*0.95,
+    #         logits=y_pred,
+    #         pos_weight=pos_weight,
+    #         name=None)
 
-        return tf.nn.weighted_cross_entropy_with_logits(
-            targets=y_true*1.1,
+    def loss_fn(y_true, y_pred):
+        # print('SHAPES')
+        # print(y_true.shape)
+        # print(y_pred.get_shape())
+
+        return tf.nn.softmax_cross_entropy_with_logits_v2(
+            labels=y_true,
             logits=y_pred,
-            pos_weight=pos_weight,
             name=None)
 
     # model.summary()
     model.compile(optimizer=Adam(lr=lr), loss=loss_fn)
     return model
+
+
 
 
 def get_readers(

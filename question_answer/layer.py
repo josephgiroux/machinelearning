@@ -1,5 +1,6 @@
 
 from keras.engine.topology import Layer
+from keras import backend as K
 import tensorflow as tf
 from question_answer.util import sigmoid, logit
 #
@@ -47,22 +48,22 @@ class ContextRepeat(Layer):
 
         print("Timed inputs:", timed_inputs.shape)
         print("Fixed inputs:", fixed_inputs.shape)
-        batch_size = tf.shape(timed_inputs)[0]
+        batch_size = K.shape(timed_inputs)[0]
         print("Batch size:", batch_size)
-        n_fixed_features = tf.shape(fixed_inputs)[-1]
+        n_fixed_features = K.shape(fixed_inputs)[-1]
         new_size = n_fixed_features * 32
         print("New size: ", new_size)
 
-        n_timesteps = tf.shape(timed_inputs)[-2:-1]
+        n_timesteps = K.shape(timed_inputs)[-2:-1]
         print("n_timesteps:", n_timesteps)
         tile_shape = [batch_size, 1, n_fixed_features]
-        tile = tf.reshape(fixed_inputs, tile_shape)
+        tile = K.reshape(fixed_inputs, tile_shape)
 
         tile_multiples = (tf.constant(1), n_timesteps[0], tf.constant(1))
 
-        tiled = tf.tile(tile, tile_multiples)
+        tiled = K.tile(tile, tile_multiples)
 
-        combined_matrix = tf.concat((timed_inputs, tiled), axis=-1)
+        combined_matrix = K.concatenate((timed_inputs, tiled), axis=-1)
 
         new_shape = [32, 104, 64]
         print("new_shape", new_shape)

@@ -34,8 +34,18 @@ test_question_x, test_y = all_test
 
 
 model = combined_network_one_reader(
-    lr=0.001, pos_weight=35)
+    lr=0.0001)
 model.summary()
+
+
+for ex in range(0,10):
+    show_example(
+            model, df,
+            question_data,
+            text_vectors,
+            text_words,
+            idx=ex)
+
 
 
 show_example(
@@ -43,9 +53,7 @@ show_example(
         question_data,
         text_vectors,
         text_words,
-        idx=1)
-
-
+        idx=4)
 
 
 #
@@ -58,13 +66,13 @@ model.fit_generator(
     generator=batch_generator(
         text_vectors=text_vectors,
         question_vectors=train_question_x,
-        batch_size=40, data_size=2,
+        batch_size=40, data_size=10,
         randomize=True),
     validation_data=batch_generator(
         text_vectors=text_vectors,
         question_vectors=test_question_x,
         batch_size=40, data_size=10000),
-    steps_per_epoch=50,
+    steps_per_epoch=1500,
     validation_steps=25)
 
 
